@@ -20,6 +20,8 @@
     edit: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg>',
     tasks: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M4 6l1 1 2-2"/><path d="M4 12l1 1 2-2"/><path d="M4 18l1 1 2-2"/></svg>',
     gem: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4h12l3 5-9 11L3 9z"/><path d="M3 9h18"/><path d="M9 4l3 16 3-16"/></svg>',
+    cal: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/><path d="M12 13v3l2 1"/></svg>',
+    chev: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
     hist: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>',
     gear: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/><circle cx="9" cy="6" r="2" fill="#15171D"/><circle cx="15" cy="12" r="2" fill="#15171D"/><circle cx="7" cy="18" r="2" fill="#15171D"/></svg>'
   };
@@ -61,7 +63,7 @@
   /* ---------- données ---------- */
   function defaultData() {
     return { version: 1, accounts: [], tasks: [], progress: {}, history: {},
-      resources: DEFAULT_RESOURCES.map(function (r) { return Object.assign({}, r); }), resLog: {},
+      resources: DEFAULT_RESOURCES.map(function (r) { return Object.assign({}, r); }), resLog: {}, events: [], autoRaid: {},
       settings: { remind: false, remindTime: '20:00' }, lastDay: null, welcomed: false };
   }
   function normalize(d) {
@@ -74,6 +76,8 @@
     if (!out.history || typeof out.history !== 'object') out.history = {};
     if (!Array.isArray(out.resources)) out.resources = DEFAULT_RESOURCES.map(function (r) { return Object.assign({}, r); });
     if (!out.resLog || typeof out.resLog !== 'object') out.resLog = {};
+    if (!Array.isArray(out.events)) out.events = [];
+    if (!out.autoRaid || typeof out.autoRaid !== 'object') out.autoRaid = {};
     return out;
   }
   function load() {
@@ -167,6 +171,10 @@
     data.tasks.forEach(function (t) { current[t.id] = periodOf(t, today); });
     Object.keys(data.progress).forEach(function (k) {
       var parts = k.split('|'), per = parts[0], tid = parts[1];
+      if (per.charAt(0) === 'o') {
+        if (!findEvent(tid) || per.slice(1, 11) < keyFromNum(dayNum(today) - 3)) delete data.progress[k];
+        return;
+      }
       if (!(tid in current)) { delete data.progress[k]; return; }
       if (per.charAt(0) === 'e') { if (per !== current[tid]) delete data.progress[k]; return; }
       if (per.slice(1) < limit) delete data.progress[k];
@@ -174,7 +182,7 @@
   }
 
   /* ---------- état de l'interface ---------- */
-  var ui = { tab: 'jour', form: null, editAcc: null, confirmAcc: null, confirmTask: false,
+  var ui = { tab: 'jour', collapsed: {}, evForm: null, confirmEv: false, form: null, editAcc: null, confirmAcc: null, confirmTask: false,
     draft: { name: '', color: PALETTE[0][0] }, importText: '', importPending: null, confirmWipe: false };
   var app = document.getElementById('app');
 
@@ -189,6 +197,7 @@
     var keepScroll = r === lastRoute && scroller ? scroller.scrollTop : 0;
     if (r !== lastRoute) {
       if (r.indexOf('tache-') !== 0) { ui.form = null; ui.confirmTask = false; }
+      if (r.indexOf('evenement-') !== 0) { ui.evForm = null; ui.confirmEv = false; }
       if (r !== 'reglages') { ui.editAcc = null; ui.confirmAcc = null; ui.confirmWipe = false; }
       if (r !== 'importer') { ui.importPending = null; }
       ui.counter = null;
@@ -198,6 +207,8 @@
     if (r === 'reglages') html = viewSettings();
     else if (r === 'historique') html = viewHistory();
     else if (r === 'ressources') html = viewResources();
+    else if (r === 'evenements') html = viewEvents();
+    else if (r.indexOf('evenement-') === 0) html = viewEventForm(r.slice(10));
     else if (r === 'importer') html = viewImport();
     else if (r.indexOf('tache-') === 0) html = viewForm(r.slice(6));
     else html = (data.accounts.length === 0 && !data.welcomed) ? viewWelcome() : viewTasks();
@@ -224,7 +235,7 @@
     function b(to, icon, label) {
       return '<button data-act="go" data-to="' + to + '" class="' + (active === to ? 'on' : '') + '">' + icon + label + '</button>';
     }
-    return '<nav class="nav">' + b('', ICON.tasks, 'Tâches') + b('ressources', ICON.gem, 'Ressources') + b('historique', ICON.hist, 'Historique') + b('reglages', ICON.gear, 'Réglages') + '</nav>';
+    return '<nav class="nav">' + b('', ICON.tasks, 'Tâches') + b('evenements', ICON.cal, 'Événements') + b('ressources', ICON.gem, 'Ressources') + b('historique', ICON.hist, 'Historique') + b('reglages', ICON.gear, 'Réglages') + '</nav>';
   }
   function headBack(kicker, title, to) {
     return '<div class="head row"><button class="icon-btn" data-act="go" data-to="' + (to || '') + '" aria-label="Retour">' + ICON.back + '</button>' +
@@ -253,8 +264,8 @@
   /* ---------- écran : tâches ---------- */
   function viewTasks() {
     var today = gameDay();
-    var tabs = [['jour', 'Quotidien'], ['hebdo', 'Hebdo'], ['event', 'Événements']];
-    var cur = statsFor(today, ui.tab);
+    var groups = [['jour', 'Quotidien'], ['hebdo', 'Hebdo'], ['event', 'Dates limitées']];
+    var cur = statsFor(today);
     var pct = cur.total ? Math.round(cur.done / cur.total * 100) : 0;
     var h = '<div class="screen">';
     h += '<div class="head"><div style="display:flex;flex-direction:column;gap:2px;min-width:0">' +
@@ -262,52 +273,309 @@
       '<h1>Aujourd’hui</h1>' +
       '<span class="sub">' + (cur.total ? plural(cur.total - cur.done, 'case', 'cases') + ' à cocher · ' : '') + 'reset ' + resetClock() + '</span></div>' +
       '<div class="score"><b>' + cur.done + '<small>/' + cur.total + '</small></b><div class="bar"><i style="width:' + pct + '%"></i></div></div></div>';
-
-    h += '<div class="tabs" role="tablist">' + tabs.map(function (tb) {
-      var s = statsFor(today, tb[0]);
-      var left = s.total - s.done;
-      return '<button role="tab" aria-selected="' + (ui.tab === tb[0]) + '" class="tab' + (ui.tab === tb[0] ? ' on' : '') + '" data-act="tab" data-tab="' + tb[0] + '">' +
-        tb[1] + (s.total ? '<span class="badge">' + (left ? left : '✓') + '</span>' : '') + '</button>';
-    }).join('') + '</div>';
-
     h += '<div class="scroll has-fab">';
-    var list = data.tasks.filter(function (t) { return tabOf(t) === ui.tab && periodOf(t, today); });
     if (!data.accounts.length) {
       h += '<div class="empty">Aucun compte pour l’instant.<button class="btn primary sm" style="width:auto;padding:0 16px" data-act="go" data-to="reglages">Ajouter un compte</button></div>';
     } else if (!data.tasks.length) {
       h += '<div class="empty">Aucune tâche. Appuie sur + pour créer la première,<br>ou importe la liste d’un ami dans Réglages.</div>';
-    } else if (!list.length) {
-      h += '<div class="empty">' + (ui.tab === 'event' ? 'Aucun événement en cours.' : 'Rien dans cet onglet aujourd’hui.') + '</div>';
     }
-    list.forEach(function (t) {
-      var per = periodOf(t, today);
-      var accs = taskAccounts(t);
-      var r = reps(t), n = 0;
-      var dots = accs.map(function (a) {
-        var c = Math.min(getCount(per, t, a), r);
-        var full = c >= r;
-        if (full) n++;
-        var pct = Math.round(c / r * 100);
-        var style = full ? 'background:' + a.color : (c > 0 ? 'border-color:' + a.color + ';color:' + a.color + (r > 1 ? ';background:linear-gradient(to top,' + a.color + '40 ' + pct + '%,transparent ' + pct + '%)' : '') : '');
-        if (ui.counter && ui.counter.t === t.id && ui.counter.a === a.id) style += ';outline:2px solid var(--text);outline-offset:2px';
-        return '<button class="dot' + (full ? ' full' : '') + '" style="' + style + '" data-act="dot" data-task="' + t.id + '" data-acc="' + a.id + '" aria-label="' +
-          esc(t.name + ' — ' + a.name + (r > 1 ? ' : ' + c + ' sur ' + r : full ? ' : fait' : ' : à faire')) + '">' +
-          esc(initials(a.name)) + (r > 1 ? '<small>' + (r > 999 ? fmtCompact(c) + '/' + fmtCompact(r) : c + '/' + r) + '</small>' : '') + '</button>';
-      }).join('');
-      var all = accs.length > 0 && n === accs.length;
-      var sub = [t.note, t.time ? 'à ' + t.time + (t.remindBefore >= 0 ? ' · rappel ' + (t.remindBefore ? t.remindBefore + ' min avant' : 'à l’heure') : '') : '', freqLabel(t, today)].filter(Boolean).join(' · ');
-      h += '<div class="card' + (all ? ' done' : '') + '"><div class="task-top">' +
-        '<div class="task-name"><b>' + esc(t.name) + '</b>' + (sub ? '<span>' + esc(sub) + '</span>' : '') + '</div>' +
-        (all ? '<span class="pill-done">TERMINÉ</span>' : '<span class="count">' + n + '<small>/' + accs.length + '</small></span>') +
-        (accs.length ? '<button class="btn-small" data-act="all" data-task="' + t.id + '">' + (all ? 'Annuler' : 'Tout') + '</button>' : '') +
-        '<button class="icon-btn ghost" data-act="go" data-to="tache-' + t.id + '" aria-label="Modifier ' + esc(t.name) + '">' + ICON.edit + '</button>' +
-        '</div>' + (accs.length ? '<div class="dots">' + dots + '</div>' : '<span class="hint">Aucun compte sélectionné pour cette tâche.</span>') +
-        counterPanel(t, per) + '</div>';
+    var shown = 0;
+    groups.forEach(function (g) {
+      var list = data.tasks.filter(function (t) { return tabOf(t) === g[0] && periodOf(t, today); });
+      if (!list.length) return;
+      shown++;
+      var st = statsFor(today, g[0]), left = st.total - st.done;
+      var closed = !!ui.collapsed[g[0]];
+      h += '<button class="sec-head' + (closed ? ' closed' : '') + '" data-act="sec" data-v="' + g[0] + '" aria-expanded="' + !closed + '">' + ICON.chev + g[1] +
+        '<span class="sec-count' + (left ? '' : ' ok') + '">' + (st.total ? (left ? plural(left, 'case', 'cases') + ' à cocher' : 'Tout est fait') : '') + '</span></button>';
+      if (closed) return;
+      // Les tâches terminées passent en bas de leur section.
+      var open = [], finished = [];
+      list.forEach(function (t) { (taskDone(t, today) ? finished : open).push(t); });
+      open.concat(finished).forEach(function (t) { h += taskCard(t, today); });
     });
+    if (data.accounts.length && data.tasks.length && !shown) h += '<div class="empty">Rien à faire aujourd’hui.</div>';
     h += '</div>';
     if (data.accounts.length) h += '<button class="fab" data-act="go" data-to="tache-new" aria-label="Nouvelle tâche">' + ICON.plus + '</button>';
     h += nav('') + '</div>';
     return h;
+  }
+  function taskDone(t, today) {
+    var per = periodOf(t, today), accs = taskAccounts(t);
+    return accs.length > 0 && accs.every(function (a) { return getCount(per, t, a) >= reps(t); });
+  }
+  function taskCard(t, today) {
+    var per = periodOf(t, today);
+    var accs = taskAccounts(t);
+    var r = reps(t), n = 0;
+    var dots = accs.map(function (a) {
+      var c = Math.min(getCount(per, t, a), r);
+      var full = c >= r;
+      if (full) n++;
+      var pct = Math.round(c / r * 100);
+      var style = full ? 'background:' + a.color : (c > 0 ? 'border-color:' + a.color + ';color:' + a.color + (r > 1 ? ';background:linear-gradient(to top,' + a.color + '40 ' + pct + '%,transparent ' + pct + '%)' : '') : '');
+      if (ui.counter && ui.counter.t === t.id && ui.counter.a === a.id) style += ';outline:2px solid var(--text);outline-offset:2px';
+      return '<button class="dot' + (full ? ' full' : '') + '" style="' + style + '" data-act="dot" data-task="' + t.id + '" data-acc="' + a.id + '" aria-label="' +
+        esc(t.name + ' — ' + a.name + (r > 1 ? ' : ' + c + ' sur ' + r : full ? ' : fait' : ' : à faire')) + '">' +
+        esc(initials(a.name)) + (r > 1 ? '<small>' + (r > 999 ? fmtCompact(c) + '/' + fmtCompact(r) : c + '/' + r) + '</small>' : '') + '</button>';
+    }).join('');
+    var all = accs.length > 0 && n === accs.length;
+    var sub = [t.note, t.time ? 'à ' + t.time + (t.remindBefore >= 0 ? ' · rappel ' + (t.remindBefore ? t.remindBefore + ' min avant' : 'à l’heure') : '') : '', freqLabel(t, today)].filter(Boolean).join(' · ');
+    return '<div class="card' + (all ? ' done' : '') + '"><div class="task-top">' +
+      '<div class="task-name"><b>' + esc(t.name) + '</b>' + (sub ? '<span>' + esc(sub) + '</span>' : '') + '</div>' +
+      (all ? '<span class="pill-done">TERMINÉ</span>' : '<span class="count">' + n + '<small>/' + accs.length + '</small></span>') +
+      (accs.length ? '<button class="btn-small" data-act="all" data-task="' + t.id + '">' + (all ? 'Annuler' : 'Tout') + '</button>' : '') +
+      '<button class="icon-btn ghost" data-act="go" data-to="tache-' + t.id + '" aria-label="Modifier ' + esc(t.name) + '">' + ICON.edit + '</button>' +
+      '</div>' + (accs.length ? '<div class="dots">' + dots + '</div>' : '<span class="hint">Aucun compte sélectionné pour cette tâche.</span>') +
+      counterPanel(t, per) + '</div>';
+  }
+
+  /* ---------- événements à heure fixe (arène…) ---------- */
+  var DUR_CHOICES = [[0, 'Pas de durée'], [15, '15 min'], [30, '30 min'], [60, '1 h'], [120, '2 h']];
+  var REMIND_CHOICES = [[-1, 'Pas de rappel'], [0, 'À l’heure'], [5, '5 min avant'], [15, '15 min avant'], [30, '30 min avant'], [60, '1 h avant']];
+  function findEvent(id) { for (var i = 0; i < data.events.length; i++) if (data.events[i].id === id) return data.events[i]; return null; }
+  function localKey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function evOnDay(ev, key) {
+    if (ev.type === 'days') return (ev.days || []).indexOf(weekday(key)) >= 0;
+    if (ev.type === 'every') {
+      var n = Math.max(2, ev.every || 2), diff = dayNum(key) - dayNum(ev.anchor || key);
+      return ((diff % n) + n) % n === 0;
+    }
+    return true;
+  }
+  function occAt(key, time) { var d = key.split('-'), t = time.split(':'); return new Date(+d[0], +d[1] - 1, +d[2], +t[0], +t[1], 0); }
+  function evPer(key, time) { return 'o' + key + '@' + time; }
+  function evAccounts(ev) { return taskAccounts(ev); }
+  function isAuto(ev, a) { return !!ev.autoOpt && (data.autoRaid[ev.id] || []).indexOf(a.id) >= 0; }
+  function evTimes(ev) { return (ev.times || []).filter(function (x) { return /^\d\d:\d\d$/.test(x); }).sort(); }
+  function nextOcc(ev, from) {
+    var base = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+    for (var d = 0; d < 400; d++) {
+      var key = localKey(new Date(base.getFullYear(), base.getMonth(), base.getDate() + d));
+      if (!evOnDay(ev, key)) continue;
+      var ts = evTimes(ev);
+      for (var i = 0; i < ts.length; i++) {
+        var at = occAt(key, ts[i]);
+        if (at.getTime() + (ev.duration || 0) * 60000 > from.getTime()) return { key: key, time: ts[i], at: at };
+      }
+    }
+    return null;
+  }
+  function inLabel(ms) {
+    var m = Math.max(0, Math.round(ms / 60000)), h = Math.floor(m / 60);
+    if (h >= 24) return 'dans ' + Math.round(h / 24) + ' j';
+    return 'dans ' + (h ? h + ' h ' + pad(m % 60) : m + ' min');
+  }
+  function evFreqLabel(ev) {
+    if (ev.type === 'days') return (ev.days || []).slice().sort().map(function (d) { return DAYS[d][1].slice(0, 3) + '.'; }).join(' ');
+    if (ev.type === 'every') return 'Tous les ' + Math.max(2, ev.every || 2) + ' jours';
+    return 'Chaque jour';
+  }
+  function viewEvents() {
+    var now = new Date(), todayKey = localKey(now);
+    var h = '<div class="screen">';
+    var occs = [];
+    data.events.forEach(function (ev) {
+      if (!evOnDay(ev, todayKey)) return;
+      evTimes(ev).forEach(function (t) { occs.push({ ev: ev, time: t, at: occAt(todayKey, t) }); });
+    });
+    occs.sort(function (a, b) { return a.at - b.at; });
+    var next = null;
+    data.events.forEach(function (ev) { var o = nextOcc(ev, now); if (o && (!next || o.at < next.at)) next = { ev: ev, o: o }; });
+    var subTxt = next ? 'Prochain : ' + next.ev.name + ' à ' + next.o.time + (next.o.at > now ? ' (' + inLabel(next.o.at - now) + ')' : ' (en cours)') : 'Aucun événement prévu';
+    h += '<div class="head"><div style="display:flex;flex-direction:column;gap:2px;min-width:0"><span class="kicker">Événements · ' +
+      esc(now.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })) + '</span><h1>Événements</h1>' +
+      '<span class="sub">' + esc(subTxt) + '</span></div></div><div class="scroll has-fab">';
+    if (!data.events.length) {
+      h += '<div class="empty">Aucun événement. Crée par exemple l’arène avec son heure,<br>son rythme et un rappel 15 min avant.' +
+        (data.accounts.length ? '<button class="btn primary sm" style="width:auto;padding:0 16px" data-act="go" data-to="evenement-new">Créer un événement</button>' : '') + '</div>';
+    } else {
+      h += '<div class="sec-head static">Aujourd’hui<span class="sec-count">' + plural(occs.length, 'passage', 'passages') + '</span></div>';
+      if (!occs.length) h += '<div class="empty" style="padding:16px">Aucun événement aujourd’hui.</div>';
+      occs.forEach(function (o) { h += occCard(o.ev, todayKey, o.time, now); });
+      h += '<div class="sec-head static" style="margin-top:8px">Mes événements</div>';
+      data.events.forEach(function (ev) {
+        var nx = nextOcc(ev, now);
+        h += '<div class="card"><div class="task-top"><div class="task-name"><b>' + esc(ev.name) + '</b><span>' +
+          esc([evTimes(ev).join(', '), evFreqLabel(ev), ev.remindBefore >= 0 ? 'rappel ' + (ev.remindBefore ? ev.remindBefore + ' min avant' : 'à l’heure') : 'sans rappel'].join(' · ')) + '</span></div>' +
+          '<button class="icon-btn ghost" data-act="go" data-to="evenement-' + ev.id + '" aria-label="Modifier ' + esc(ev.name) + '">' + ICON.edit + '</button></div>' +
+          '<div class="row-between"><span class="hint">' + (nx ? 'Prochain : ' + esc(fmtLocal(nx.at)) + ' à ' + nx.time : 'Aucun passage prévu') + '</span>' +
+          (ev.type === 'every' ? '<div class="btn-row"><button class="btn-small" data-act="evShift" data-v="' + ev.id + '" data-d="-1" aria-label="Avancer d’un jour">−1 j</button><button class="btn-small" data-act="evShift" data-v="' + ev.id + '" data-d="1" aria-label="Reculer d’un jour">+1 j</button></div>' : '') +
+          '</div></div>';
+      });
+    }
+    h += '</div>';
+    if (data.accounts.length) h += '<button class="fab" data-act="go" data-to="evenement-new" aria-label="Nouvel événement">' + ICON.plus + '</button>';
+    h += nav('evenements') + '</div>';
+    return h;
+  }
+  function fmtLocal(d) {
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var diff = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - today) / 86400000);
+    if (diff === 0) return 'aujourd’hui';
+    if (diff === 1) return 'demain';
+    return d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+  }
+  function occCard(ev, key, time, now) {
+    var at = occAt(key, time), end = new Date(at.getTime() + (ev.duration || 0) * 60000);
+    var per = evPer(key, time), accs = evAccounts(ev), n = 0;
+    var status;
+    if (now < at) status = inLabel(at - now);
+    else if (ev.duration && now < end) status = 'en cours · encore ' + inLabel(end - now).replace('dans ', '');
+    else status = ev.duration ? 'terminé' : 'c’est passé';
+    var past = ev.duration ? now >= end : now >= at;
+    var dots = accs.map(function (a) {
+      var done = (data.progress[pkey(per, ev, a)] || 0) >= 1, auto = isAuto(ev, a);
+      if (done) n++;
+      var style = done ? 'background:' + a.color : (auto ? 'border-style:dashed;border-color:' + a.color + ';color:' + a.color : '');
+      return '<button class="dot' + (done ? ' full' : '') + '" style="' + style + '" data-act="evDot" data-ev="' + ev.id + '" data-key="' + key + '" data-time="' + time + '" data-acc="' + a.id + '" aria-label="' +
+        esc(ev.name + ' ' + time + ' — ' + a.name + (done ? ' : fait' : ' : à faire') + (auto ? ', raid auto' : '')) + '">' + esc(initials(a.name)) + (auto ? '<small>auto</small>' : '') + '</button>';
+    }).join('');
+    var all = accs.length > 0 && n === accs.length;
+    var h = '<div class="card' + (all ? ' done' : '') + (past && !all ? ' past' : '') + '"><div class="task-top"><span class="ev-time">' + time + '</span>' +
+      '<div class="task-name"><b>' + esc(ev.name) + '</b><span>' + esc([ev.note, status].filter(Boolean).join(' · ')) + '</span></div>' +
+      (all ? '<span class="pill-done">FAIT</span>' : '<span class="count">' + n + '<small>/' + accs.length + '</small></span>') +
+      (accs.length ? '<button class="btn-small" data-act="evAll" data-ev="' + ev.id + '" data-key="' + key + '" data-time="' + time + '">' + (all ? 'Annuler' : 'Tout') + '</button>' : '') +
+      '</div>' + (accs.length ? '<div class="dots">' + dots + '</div>' : '<span class="hint">Aucun compte sélectionné.</span>');
+    if (ev.autoOpt && accs.length) {
+      h += '<div class="raid-row"><span class="raid-label">Raid auto</span>' + accs.map(function (a) {
+        var on = isAuto(ev, a);
+        return '<button class="raid-chip' + (on ? ' on' : '') + '" style="' + (on ? 'background:' + a.color + ';border-color:' + a.color : '') + '" data-act="raid" data-ev="' + ev.id + '" data-acc="' + a.id + '" aria-pressed="' + on + '" aria-label="Raid auto ' + esc(a.name) + '">' + esc(initials(a.name)) + '</button>';
+      }).join('') + '</div>';
+    }
+    return h + '</div>';
+  }
+  function evToggle(evId, key, time, aid) {
+    var ev = findEvent(evId), a = findAcc(aid);
+    if (!ev || !a) return;
+    var k = pkey(evPer(key, time), ev, a);
+    if (data.progress[k]) delete data.progress[k]; else data.progress[k] = 1;
+    save(); render();
+  }
+  function evAll(evId, key, time) {
+    var ev = findEvent(evId);
+    if (!ev) return;
+    var per = evPer(key, time), accs = evAccounts(ev);
+    var all = accs.every(function (a) { return data.progress[pkey(per, ev, a)]; });
+    accs.forEach(function (a) { if (all) delete data.progress[pkey(per, ev, a)]; else data.progress[pkey(per, ev, a)] = 1; });
+    save(); render();
+  }
+  function toggleRaid(evId, aid) {
+    var list = data.autoRaid[evId] || (data.autoRaid[evId] = []);
+    var i = list.indexOf(aid);
+    if (i >= 0) list.splice(i, 1); else list.push(aid);
+    save(); render();
+    toast(i >= 0 ? 'Raid auto désactivé' : 'Raid auto activé : pas de rappel pour ce compte');
+  }
+  function shiftEvent(evId, d) {
+    var ev = findEvent(evId);
+    if (!ev) return;
+    ev.anchor = keyFromNum(dayNum(ev.anchor || localKey(new Date())) + d);
+    save(); render();
+    var nx = nextOcc(ev, new Date());
+    toast(nx ? 'Prochain passage : ' + fmtLocal(nx.at) + ' à ' + nx.time : 'Décalé');
+  }
+  function newEvForm(id) {
+    var ev = id !== 'new' ? findEvent(id) : null;
+    var f = { id: null, name: '', note: '', type: 'every', days: [0, 1, 2, 3, 4, 5, 6], every: 2, anchor: localKey(new Date()),
+      times: ['20:00'], duration: 0, remindBefore: 15, autoOpt: true, allAccounts: true, accounts: data.accounts.map(function (a) { return a.id; }) };
+    if (ev) {
+      f = Object.assign(f, JSON.parse(JSON.stringify(ev)));
+      if (f.allAccounts) f.accounts = data.accounts.map(function (a) { return a.id; });
+    }
+    return f;
+  }
+  function evIssues(f) {
+    if (!f.name.trim()) return 'Donne un nom à l’événement';
+    if (!evTimes(f).length) return 'Ajoute au moins une heure';
+    if (f.type === 'days' && !f.days.length) return 'Choisis au moins un jour';
+    if (f.type === 'every' && !/^\d{4}-\d\d-\d\d$/.test(f.anchor || '')) return 'Indique la date du prochain passage';
+    if (!f.allAccounts && !f.accounts.length) return 'Sélectionne au moins un compte';
+    return null;
+  }
+  function viewEventForm(id) {
+    if (!ui.evForm || (ui.evForm.id || 'new') !== id) {
+      if (id !== 'new' && !findEvent(id)) { setTimeout(function () { go('evenements'); }, 0); return ''; }
+      ui.evForm = newEvForm(id);
+    }
+    var f = ui.evForm, editing = !!f.id;
+    var h = '<div class="screen">' + headBack('Événement à heure fixe', editing ? 'Modifier l’événement' : 'Nouvel événement', 'evenements') + '<div class="scroll gap-lg">';
+    h += '<div class="field"><label class="label" for="e-name">Nom</label><input id="e-name" class="input" data-field="evName" maxlength="60" placeholder="Ex. Arène" value="' + esc(f.name) + '"></div>';
+    h += '<div class="field"><label class="label" for="e-note">Précision (facultatif)</label><input id="e-note" class="input" data-field="evNote" maxlength="60" placeholder="Ex. 5 combats" value="' + esc(f.note) + '"></div>';
+    h += '<div class="field" style="gap:10px"><span class="label">Heures</span>' + f.times.map(function (t, i) {
+      return '<div class="row-between" style="gap:8px"><input type="time" class="input" style="flex:1" aria-label="Heure ' + (i + 1) + '" data-field="evTime" data-i="' + i + '" value="' + esc(t) + '">' +
+        (f.times.length > 1 ? '<button class="icon-btn" data-act="evTimeDel" data-i="' + i + '" aria-label="Retirer cette heure" style="color:var(--danger)">' + ICON.trash + '</button>' : '') + '</div>';
+    }).join('') + (f.times.length < 6 ? '<button class="btn outline sm" data-act="evTimeAdd">Ajouter une heure</button>' : '') + '</div>';
+    h += '<div class="field" style="gap:10px"><span class="label">Rythme</span><div class="grid2">' +
+      [['every', 'Tous les X jours'], ['daily', 'Chaque jour'], ['days', 'Certains jours']].map(function (q, i) {
+        return '<button class="choice' + (f.type === q[0] ? ' on' : '') + (i === 0 ? ' span2' : '') + '" data-act="evType" data-v="' + q[0] + '" aria-pressed="' + (f.type === q[0]) + '">' + q[1] + '</button>';
+      }).join('') + '</div>';
+    if (f.type === 'every') {
+      h += '<div class="stepper"><span>Tous les <strong>' + f.every + '</strong> jours</span><button data-act="evEvery" data-v="-1" aria-label="Moins">−</button><button data-act="evEvery" data-v="1" aria-label="Plus">+</button></div>' +
+        '<div class="field"><label class="hint" for="e-anchor">Date d’un prochain passage</label><input type="date" id="e-anchor" class="input" data-field="evAnchor" value="' + esc(f.anchor) + '"></div>' +
+        '<span class="hint">En cas de décalage dans le jeu, les boutons −1 j / +1 j de l’onglet Événements recalent la suite.</span>';
+    }
+    if (f.type === 'days') {
+      h += '<div class="days">' + DAYS.map(function (d, i) {
+        var on = f.days.indexOf(i) >= 0;
+        return '<button class="choice' + (on ? ' on' : '') + '" data-act="evDay" data-v="' + i + '" aria-label="' + d[1] + '" aria-pressed="' + on + '">' + d[0] + '</button>';
+      }).join('') + '</div>';
+    }
+    h += '</div>';
+    h += '<div class="field" style="gap:10px"><span class="label">Durée</span><div class="chips">' + DUR_CHOICES.map(function (o) {
+      var on = (f.duration || 0) === o[0];
+      return '<button class="choice' + (on ? ' on' : '') + '" style="padding:0 12px;height:44px" data-act="evDur" data-v="' + o[0] + '" aria-pressed="' + on + '">' + o[1] + '</button>';
+    }).join('') + '</div><span class="hint">Permet d’afficher « en cours » pendant l’événement.</span></div>';
+    h += '<div class="field" style="gap:10px"><span class="label">Rappel</span><div class="chips">' + REMIND_CHOICES.map(function (o) {
+      var on = f.remindBefore === o[0];
+      return '<button class="choice' + (on ? ' on' : '') + '" style="padding:0 12px;height:44px" data-act="evRemind" data-v="' + o[0] + '" aria-pressed="' + on + '">' + o[1] + '</button>';
+    }).join('') + '</div></div>';
+    h += '<div class="box row"><div class="grow"><b>Option raid auto</b><span class="hint">Une ligne « Raid auto » par passage. Les comptes en raid auto ne déclenchent pas de rappel.</span></div>' +
+      '<button class="switch' + (f.autoOpt ? ' on' : '') + '" role="switch" aria-checked="' + !!f.autoOpt + '" aria-label="Option raid auto" data-act="evAuto"><i></i></button></div>';
+    h += '<div class="field" style="gap:10px"><div class="row-between"><span class="label">Comptes concernés</span>' +
+      (data.accounts.length ? '<button class="link-btn" data-act="evAccAll">' + (f.allAccounts ? 'Choisir' : 'Tous') + '</button>' : '') + '</div>' +
+      '<div class="chips">' + data.accounts.map(function (a) {
+        var on = f.allAccounts || f.accounts.indexOf(a.id) >= 0;
+        return '<button class="chip' + (on ? ' on' : '') + '" style="' + (on ? 'border-color:' + a.color : '') + '" data-act="evAcc" data-v="' + a.id + '" aria-pressed="' + on + '">' +
+          '<span class="av" style="' + (on ? 'background:' + a.color : '') + '">' + esc(initials(a.name)) + '</span>' + esc(a.name) + '</button>';
+      }).join('') + '</div></div>';
+    if (editing) {
+      h += ui.confirmEv
+        ? '<div class="box"><b>Supprimer « ' + esc(f.name || 'cet événement') + ' » ?</b><div class="btn-row"><button class="btn outline sm" data-act="evDelCancel">Annuler</button><button class="btn danger sm" data-act="evDel">Supprimer</button></div></div>'
+        : '<button class="btn outline sm" style="color:var(--danger)" data-act="evDelAsk">Supprimer l’événement</button>';
+    }
+    h += '</div>';
+    var issue = evIssues(f);
+    h += '<div class="footer"><button class="btn primary" id="e-save" data-act="evSave"' + (issue ? ' disabled' : '') + '>' + esc(issue || (editing ? 'Enregistrer' : 'Créer l’événement')) + '</button></div></div>';
+    return h;
+  }
+  function refreshEvSave() {
+    var b = document.getElementById('e-save');
+    if (!b || !ui.evForm) return;
+    var issue = evIssues(ui.evForm);
+    b.disabled = !!issue;
+    b.textContent = issue || (ui.evForm.id ? 'Enregistrer' : 'Créer l’événement');
+  }
+  function saveEvent() {
+    var f = ui.evForm;
+    if (!f || evIssues(f)) return;
+    var ev = { id: f.id || uid(), name: f.name.trim(), note: f.note.trim(), type: f.type, days: f.days.slice(), every: f.every, anchor: f.anchor,
+      times: evTimes(f).filter(function (t, i, arr) { return arr.indexOf(t) === i; }), duration: f.duration || 0, remindBefore: f.remindBefore, autoOpt: !!f.autoOpt,
+      allAccounts: f.allAccounts, accounts: f.allAccounts ? [] : f.accounts.slice() };
+    var i = data.events.findIndex(function (x) { return x.id === ev.id; });
+    if (i >= 0) data.events[i] = ev; else data.events.push(ev);
+    save();
+    if (ev.remindBefore >= 0) ensureNotifPermission(true);
+    toast(i >= 0 ? 'Événement modifié' : 'Événement créé');
+    go('evenements');
+  }
+  function deleteEvent() {
+    var f = ui.evForm;
+    if (!f || !f.id) return;
+    data.events = data.events.filter(function (e) { return e.id !== f.id; });
+    delete data.autoRaid[f.id];
+    Object.keys(data.progress).forEach(function (k) { if (k.split('|')[1] === f.id) delete data.progress[k]; });
+    save(); toast('Événement supprimé'); go('evenements');
   }
 
   // Panneau de compteur, ouvert sous la tâche quand l'objectif est grand (ex. 51/200).
@@ -403,7 +671,7 @@
     h += '<div class="field"><label class="label" for="f-name">Nom</label><input id="f-name" class="input" data-field="name" maxlength="60" placeholder="Ex. Boss mondial" value="' + esc(f.name) + '"></div>';
     h += '<div class="field"><label class="label" for="f-note">Précision (facultatif)</label><input id="f-note" class="input" data-field="note" maxlength="60" placeholder="Ex. toutes les mines" value="' + esc(f.note) + '"></div>';
 
-    var freqs = [['daily', 'Chaque jour'], ['weekly', 'Chaque semaine'], ['days', 'Certains jours'], ['every', 'Tous les X jours'], ['event', 'Événement daté']];
+    var freqs = [['daily', 'Chaque jour'], ['weekly', 'Chaque semaine'], ['days', 'Certains jours'], ['every', 'Tous les X jours'], ['event', 'Dates limitées']];
     h += '<div class="field" style="gap:10px"><span class="label">Fréquence</span><div class="grid2">' + freqs.map(function (q, i) {
       return '<button class="choice' + (f.type === q[0] ? ' on' : '') + (i === 4 ? ' span2' : '') + '" data-act="freq" data-v="' + q[0] + '" aria-pressed="' + (f.type === q[0]) + '">' + q[1] + '</button>';
     }).join('') + '</div>';
@@ -426,7 +694,7 @@
       weekly: 'À faire une fois par semaine. Remise à zéro le ' + DAYS[f.resetDay][1] + '.',
       days: f.days.length ? 'Apparaît le ' + f.days.slice().sort().map(function (d) { return DAYS[d][1]; }).join(', ') + '.' : 'Choisis au moins un jour.',
       every: 'À faire une fois tous les ' + f.every + ' jours' + (editing ? '.' : ', à partir d’aujourd’hui.'),
-      event: 'À faire chaque jour pendant l’événement, puis la tâche disparaît.'
+      event: 'À faire chaque jour entre ces deux dates, puis la tâche disparaît.'
     }[f.type];
     h += '<span class="hint">' + summary + '</span></div>';
 
@@ -693,7 +961,8 @@
   }
   function deleteAccount(id) {
     data.accounts = data.accounts.filter(function (a) { return a.id !== id; });
-    data.tasks.forEach(function (t) { if (t.accounts) t.accounts = t.accounts.filter(function (x) { return x !== id; }); });
+    data.tasks.concat(data.events).forEach(function (t) { if (t.accounts) t.accounts = t.accounts.filter(function (x) { return x !== id; }); });
+    Object.keys(data.autoRaid).forEach(function (k) { data.autoRaid[k] = data.autoRaid[k].filter(function (x) { return x !== id; }); });
     Object.keys(data.progress).forEach(function (k) { if (k.split('|')[2] === id) delete data.progress[k]; });
     Object.keys(data.resLog).forEach(function (k) { if (k.split('|')[0] === id) delete data.resLog[k]; });
     ui.editAcc = null; ui.confirmAcc = null;
@@ -758,7 +1027,8 @@
       return { name: t.name, note: t.note, type: t.type, days: t.days, resetDay: t.resetDay, every: t.every, from: t.from, to: t.to, reps: t.reps, time: t.time || '', remindBefore: t.time ? t.remindBefore : -1 };
     });
     shareText('Ma liste de tâches Multicompte',
-      'Ma liste de tâches Multicompte. Dans l’appli : Réglages > Importer, puis colle tout ce message.\n\n' + encode({ kind: 'tasks', v: 1, tasks: tasks }));
+      'Ma liste de tâches Multicompte. Dans l’appli : Réglages > Importer, puis colle tout ce message.\n\n' + encode({ kind: 'tasks', v: 2, tasks: tasks,
+        events: data.events.map(function (e) { return { name: e.name, note: e.note, type: e.type, days: e.days, every: e.every, anchor: e.anchor, times: e.times, duration: e.duration, remindBefore: e.remindBefore, autoOpt: e.autoOpt }; }) }));
   }
   function backup() {
     shareText('Sauvegarde Multicompte',
@@ -769,8 +1039,9 @@
     if (ui.importPending) {
       var p = ui.importPending;
       if (p.kind === 'tasks') {
-        h += '<div class="box"><b>' + plural(p.tasks.length, 'tâche trouvée', 'tâches trouvées') + '</b><span class="hint">' +
-          esc(p.tasks.slice(0, 8).map(function (t) { return t.name; }).join(', ')) + (p.tasks.length > 8 ? '…' : '') +
+        var names = p.tasks.concat(p.events).map(function (t) { return t.name; });
+        h += '<div class="box"><b>' + plural(p.tasks.length, 'tâche', 'tâches') + (p.events.length ? ' et ' + plural(p.events.length, 'événement', 'événements') : '') + ' trouvés</b><span class="hint">' +
+          esc(names.slice(0, 8).join(', ')) + (names.length > 8 ? '…' : '') +
           '</span><span class="hint">Elles s’ajoutent à tes tâches actuelles et s’appliquent à tous tes comptes.</span>' +
           '<div class="btn-row"><button class="btn outline sm" data-act="importCancel">Annuler</button><button class="btn primary sm" data-act="importConfirm">Ajouter</button></div></div>';
       } else {
@@ -791,7 +1062,8 @@
   function readImport() {
     var obj = decode(ui.importText || '');
     if (!obj || (obj.kind !== 'tasks' && obj.kind !== 'backup')) { toast('Message non reconnu'); return; }
-    if (obj.kind === 'tasks' && (!Array.isArray(obj.tasks) || !obj.tasks.length)) { toast('Aucune tâche dans ce message'); return; }
+    if (obj.kind === 'tasks') { if (!Array.isArray(obj.tasks)) obj.tasks = []; if (!Array.isArray(obj.events)) obj.events = []; }
+    if (obj.kind === 'tasks' && !obj.tasks.length && !obj.events.length) { toast('Aucune tâche dans ce message'); return; }
     if (obj.kind === 'backup') obj.data = normalize(obj.data);
     ui.importPending = obj; render();
   }
@@ -809,7 +1081,15 @@
           time: /^\d\d:\d\d$/.test(t.time || '') ? t.time : '', remindBefore: /^\d\d:\d\d$/.test(t.time || '') && t.remindBefore >= 0 ? +t.remindBefore : -1
         });
       });
-      toast(plural(p.tasks.length, 'tâche importée', 'tâches importées'));
+      p.events.forEach(function (e) {
+        var times = (Array.isArray(e.times) ? e.times : []).filter(function (x) { return /^\d\d:\d\d$/.test(x); });
+        if (!times.length) return;
+        data.events.push({ id: uid(), name: String(e.name || 'Événement').slice(0, 60), note: String(e.note || '').slice(0, 60),
+          type: ['daily', 'days', 'every'].indexOf(e.type) >= 0 ? e.type : 'daily', days: Array.isArray(e.days) ? e.days : [0, 1, 2, 3, 4, 5, 6],
+          every: Math.max(2, e.every || 2), anchor: /^\d{4}-\d\d-\d\d$/.test(e.anchor || '') ? e.anchor : localKey(new Date()), times: times.slice(0, 6),
+          duration: +e.duration || 0, remindBefore: e.remindBefore >= 0 ? +e.remindBefore : -1, autoOpt: !!e.autoOpt, allAccounts: true, accounts: [] });
+      });
+      toast(plural(p.tasks.length + p.events.length, 'élément importé', 'éléments importés'));
     } else {
       data = p.data;
       data.lastDay = null;
@@ -873,7 +1153,25 @@
           'À ' + t.time + ' · ' + (todo === accs.length ? 'à faire sur ' + plural(todo, 'compte', 'comptes') : 'encore ' + plural(todo, 'compte', 'comptes') + ' à faire'));
       }
     });
-    return list.slice(0, 60);
+    // Événements à heure fixe (arène…) : pas de rappel pour les comptes faits ou en raid auto.
+    data.events.forEach(function (ev) {
+      if (!(ev.remindBefore >= 0)) return;
+      for (var d = 0; d < 8; d++) {
+        var key = localKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + d));
+        if (!evOnDay(ev, key)) continue;
+        evTimes(ev).forEach(function (time) {
+          var occ = occAt(key, time), at = new Date(occ.getTime() - ev.remindBefore * 60000);
+          if (at <= now) return;
+          var accs = evAccounts(ev), per = evPer(key, time);
+          var todo = accs.filter(function (a) { return !data.progress[pkey(per, ev, a)] && !isAuto(ev, a); }).length;
+          if (!accs.length || !todo) return;
+          push(at, ev.remindBefore ? ev.name + ' dans ' + ev.remindBefore + ' min' : ev.name + ' : c’est maintenant',
+            'À ' + time + ' · ' + plural(todo, 'compte', 'comptes') + ' à faire');
+        });
+      }
+    });
+    list.sort(function (a, b) { return a.schedule.at - b.schedule.at; });
+    return list.slice(0, 100);
   }
   function ensureNotifPermission(quiet) {
     var LN = plugin('LocalNotifications');
@@ -909,6 +1207,30 @@
     go: function (el) { go(el.dataset.to); },
     welcome: function (el) { data.welcomed = true; save(); go(el.dataset.to); },
     tab: function (el) { ui.tab = el.dataset.tab; ui.counter = null; render(); },
+    sec: function (el) { ui.collapsed[el.dataset.v] = !ui.collapsed[el.dataset.v]; render(); },
+    evDot: function (el) { evToggle(el.dataset.ev, el.dataset.key, el.dataset.time, el.dataset.acc); },
+    evAll: function (el) { evAll(el.dataset.ev, el.dataset.key, el.dataset.time); },
+    raid: function (el) { toggleRaid(el.dataset.ev, el.dataset.acc); },
+    evShift: function (el) { shiftEvent(el.dataset.v, +el.dataset.d); },
+    evType: function (el) { ui.evForm.type = el.dataset.v; render(); },
+    evEvery: function (el) { ui.evForm.every = Math.min(30, Math.max(2, ui.evForm.every + (+el.dataset.v))); render(); },
+    evDay: function (el) { var f = ui.evForm, d = +el.dataset.v, i = f.days.indexOf(d); if (i >= 0) f.days.splice(i, 1); else f.days.push(d); render(); },
+    evDur: function (el) { ui.evForm.duration = +el.dataset.v; render(); },
+    evRemind: function (el) { ui.evForm.remindBefore = +el.dataset.v; render(); },
+    evAuto: function () { ui.evForm.autoOpt = !ui.evForm.autoOpt; render(); },
+    evTimeAdd: function () { ui.evForm.times.push('20:00'); render(); },
+    evTimeDel: function (el) { ui.evForm.times.splice(+el.dataset.i, 1); render(); },
+    evAcc: function (el) {
+      var f = ui.evForm, id = el.dataset.v;
+      if (f.allAccounts) { f.allAccounts = false; f.accounts = data.accounts.map(function (a) { return a.id; }); }
+      var i = f.accounts.indexOf(id); if (i >= 0) f.accounts.splice(i, 1); else f.accounts.push(id);
+      render();
+    },
+    evAccAll: function () { var f = ui.evForm; f.allAccounts = !f.allAccounts; f.accounts = data.accounts.map(function (a) { return a.id; }); render(); },
+    evSave: saveEvent,
+    evDelAsk: function () { ui.confirmEv = true; render(); },
+    evDelCancel: function () { ui.confirmEv = false; render(); },
+    evDel: deleteEvent,
     dot: function (el) { cycleDot(el.dataset.task, el.dataset.acc); },
     all: function (el) { toggleAll(el.dataset.task); },
     freq: function (el) { ui.form.type = el.dataset.v; render(); },
@@ -987,6 +1309,8 @@
     else if (f === 'draft') { ui.draft.name = el.value; var b = document.getElementById('acc-add'); if (b) b.disabled = !el.value.trim(); }
     else if (f === 'accName') { var a = findAcc(el.dataset.v); if (a && el.value.trim()) { a.name = el.value.trim(); save(); } }
     else if (f === 'importText') { ui.importText = el.value; }
+    else if (ui.evForm && f === 'evName') { ui.evForm.name = el.value; refreshEvSave(); }
+    else if (ui.evForm && f === 'evNote') { ui.evForm.note = el.value; }
     else if (f === 'reps' && ui.form) { var rv = parseInt(el.value.replace(/\D/g, ''), 10); ui.form.reps = Math.max(1, Math.min(100000, rv || 1)); }
     else if (f === 'resDraft') { ui.resDraft = el.value; var rb = document.getElementById('res-add'); if (rb) rb.disabled = !el.value.trim(); }
     else if (f === 'resName') { var rr = data.resources.filter(function (x) { return x.id === el.dataset.v; })[0]; if (rr && el.value.trim()) { rr.name = el.value.trim(); save(); } }
@@ -996,6 +1320,8 @@
     if (f === 'remindTime' && el.value) { data.settings.remindTime = el.value; save(); }
     if (f === 'accName' || f === 'resName') render();
     if (f === 'res') applyResInput(el);
+    if (ui.evForm && f === 'evTime') { ui.evForm.times[+el.dataset.i] = el.value; render(); }
+    if (ui.evForm && f === 'evAnchor') { ui.evForm.anchor = el.value; refreshEvSave(); }
     if (f === 'time' && ui.form) { ui.form.time = el.value; if (el.value && ui.form.remindBefore < 0 && !ui.form.id) ui.form.remindBefore = 15; render(); }
     if (f === 'cnt' && ui.counter) {
       var raw = el.value.replace(/\s/g, ''), m = raw.match(/^([+-]?)(\d+)$/);

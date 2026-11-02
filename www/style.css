@@ -60,8 +60,8 @@ h1.small{font-size:24px}
 .empty{border:1px dashed var(--line2);border-radius:14px;padding:22px 16px;text-align:center;color:var(--muted);font-size:14px;line-height:1.5;display:flex;flex-direction:column;gap:12px;align-items:center}
 
 .fab{position:absolute;right:16px;bottom:calc(96px + env(safe-area-inset-bottom));width:60px;height:60px;border-radius:16px;border:0;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;box-shadow:0 8px 24px rgba(163,230,53,.25)}
-.nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--line);padding:8px 8px calc(12px + env(safe-area-inset-bottom));background:var(--nav)}
-.nav button{height:56px;border:0;background:transparent;color:var(--muted);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:12px;font-weight:600}
+.nav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));border-top:1px solid var(--line);padding:8px 8px calc(12px + env(safe-area-inset-bottom));background:var(--nav)}
+.nav button{height:56px;border:0;background:transparent;color:var(--muted);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:11px;font-weight:600;padding:0 2px;min-width:0}
 .nav button.on{color:var(--accent);font-weight:700}
 
 .label{font-size:12px;letter-spacing:.08em;font-weight:700;color:var(--muted);text-transform:uppercase}
@@ -152,3 +152,17 @@ input[type=time].input,input[type=date].input{color-scheme:dark}
 .counter-quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 .counter-quick .btn{padding:0 4px}
 .reps-input{height:44px;width:110px;flex:none;text-align:center;font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+
+.sec-head{display:flex;align-items:center;gap:8px;width:100%;background:none;border:0;padding:10px 2px 2px;color:var(--muted);font-size:12px;letter-spacing:.08em;font-weight:700;text-transform:uppercase;text-align:left}
+.sec-head svg{transition:transform .15s}
+.sec-head.closed svg{transform:rotate(-90deg)}
+.sec-head .sec-count{margin-left:auto;text-transform:none;letter-spacing:0;font-size:13px;font-weight:600}
+.sec-head .sec-count.ok{color:var(--accent)}
+.sec-head.static{cursor:default}
+.ev-time{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;flex:none}
+.card.past{opacity:.6}
+.raid-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:10px}
+.raid-label{font-size:12px;font-weight:700;color:var(--muted);margin-right:4px}
+.raid-chip{height:36px;min-width:44px;padding:0 8px;border-radius:8px;border:1px dashed var(--line2);background:transparent;color:var(--muted);font-size:12px;font-weight:700}
+.raid-chip.on{border-style:solid;color:var(--on-accent)}
+@media (prefers-reduced-motion: reduce){.sec-head svg{transition:none}}
