@@ -63,7 +63,7 @@
   /* ---------- données ---------- */
   function defaultData() {
     return { version: 1, accounts: [], tasks: [], progress: {}, history: {},
-      resources: DEFAULT_RESOURCES.map(function (r) { return Object.assign({}, r); }), resLog: {}, events: [], autoRaid: {},
+      resources: DEFAULT_RESOURCES.map(function (r) { return Object.assign({}, r); }), resLog: {}, events: [], raid: {},
       settings: { remind: false, remindTime: '20:00' }, lastDay: null, welcomed: false };
   }
   function normalize(d) {
@@ -77,7 +77,8 @@
     if (!Array.isArray(out.resources)) out.resources = DEFAULT_RESOURCES.map(function (r) { return Object.assign({}, r); });
     if (!out.resLog || typeof out.resLog !== 'object') out.resLog = {};
     if (!Array.isArray(out.events)) out.events = [];
-    if (!out.autoRaid || typeof out.autoRaid !== 'object') out.autoRaid = {};
+    if (!out.raid || typeof out.raid !== 'object') out.raid = {};
+    delete out.autoRaid; // ancien format (raid auto permanent), remplacé par un raid auto par passage
     return out;
   }
   function load() {
@@ -178,6 +179,10 @@
       if (!(tid in current)) { delete data.progress[k]; return; }
       if (per.charAt(0) === 'e') { if (per !== current[tid]) delete data.progress[k]; return; }
       if (per.slice(1) < limit) delete data.progress[k];
+    });
+    Object.keys(data.raid).forEach(function (k) {
+      var per = k.split('|')[0];
+      if (!findEvent(k.split('|')[1]) || per.slice(1, 11) < keyFromNum(dayNum(today) - 3)) delete data.raid[k];
     });
   }
 
@@ -346,7 +351,8 @@
   function occAt(key, time) { var d = key.split('-'), t = time.split(':'); return new Date(+d[0], +d[1] - 1, +d[2], +t[0], +t[1], 0); }
   function evPer(key, time) { return 'o' + key + '@' + time; }
   function evAccounts(ev) { return taskAccounts(ev); }
-  function isAuto(ev, a) { return !!ev.autoOpt && (data.autoRaid[ev.id] || []).indexOf(a.id) >= 0; }
+  // Le raid auto ne vaut que pour un passage précis : il cesse de lui-même à la fin de ce passage.
+  function isAuto(ev, a, per) { return !!ev.autoOpt && !!data.raid[pkey(per, ev, a)]; }
   function evTimes(ev) { return (ev.times || []).filter(function (x) { return /^\d\d:\d\d$/.test(x); }).sort(); }
   function nextOcc(ev, from) {
     var base = new Date(from.getFullYear(), from.getMonth(), from.getDate());
@@ -425,7 +431,7 @@
     else status = ev.duration ? 'terminé' : 'c’est passé';
     var past = ev.duration ? now >= end : now >= at;
     var dots = accs.map(function (a) {
-      var done = (data.progress[pkey(per, ev, a)] || 0) >= 1, auto = isAuto(ev, a);
+      var done = (data.progress[pkey(per, ev, a)] || 0) >= 1, auto = isAuto(ev, a, per);
       if (done) n++;
       var style = done ? 'background:' + a.color : (auto ? 'border-style:dashed;border-color:' + a.color + ';color:' + a.color : '');
       return '<button class="dot' + (done ? ' full' : '') + '" style="' + style + '" data-act="evDot" data-ev="' + ev.id + '" data-key="' + key + '" data-time="' + time + '" data-acc="' + a.id + '" aria-label="' +
@@ -437,11 +443,11 @@
       (all ? '<span class="pill-done">FAIT</span>' : '<span class="count">' + n + '<small>/' + accs.length + '</small></span>') +
       (accs.length ? '<button class="btn-small" data-act="evAll" data-ev="' + ev.id + '" data-key="' + key + '" data-time="' + time + '">' + (all ? 'Annuler' : 'Tout') + '</button>' : '') +
       '</div>' + (accs.length ? '<div class="dots">' + dots + '</div>' : '<span class="hint">Aucun compte sélectionné.</span>');
-    if (ev.autoOpt && accs.length) {
+    if (ev.autoOpt && accs.length && !past) {
       h += '<div class="raid-row"><span class="raid-label">Raid auto</span>' + accs.map(function (a) {
-        var on = isAuto(ev, a);
-        return '<button class="raid-chip' + (on ? ' on' : '') + '" style="' + (on ? 'background:' + a.color + ';border-color:' + a.color : '') + '" data-act="raid" data-ev="' + ev.id + '" data-acc="' + a.id + '" aria-pressed="' + on + '" aria-label="Raid auto ' + esc(a.name) + '">' + esc(initials(a.name)) + '</button>';
-      }).join('') + '</div>';
+        var on = isAuto(ev, a, per);
+        return '<button class="raid-chip' + (on ? ' on' : '') + '" style="' + (on ? 'background:' + a.color + ';border-color:' + a.color : '') + '" data-act="raid" data-ev="' + ev.id + '" data-key="' + key + '" data-time="' + time + '" data-acc="' + a.id + '" aria-pressed="' + on + '" aria-label="Raid auto ' + esc(a.name) + ' pour ' + time + '">' + esc(initials(a.name)) + '</button>';
+      }).join('') + '<span class="raid-hint">pour ce passage</span></div>';
     }
     return h + '</div>';
   }
@@ -460,12 +466,13 @@
     accs.forEach(function (a) { if (all) delete data.progress[pkey(per, ev, a)]; else data.progress[pkey(per, ev, a)] = 1; });
     save(); render();
   }
-  function toggleRaid(evId, aid) {
-    var list = data.autoRaid[evId] || (data.autoRaid[evId] = []);
-    var i = list.indexOf(aid);
-    if (i >= 0) list.splice(i, 1); else list.push(aid);
+  function toggleRaid(evId, key, time, aid) {
+    var ev = findEvent(evId), a = findAcc(aid);
+    if (!ev || !a) return;
+    var k = pkey(evPer(key, time), ev, a), was = !!data.raid[k];
+    if (was) delete data.raid[k]; else data.raid[k] = 1;
     save(); render();
-    toast(i >= 0 ? 'Raid auto désactivé' : 'Raid auto activé : pas de rappel pour ce compte');
+    toast(was ? 'Raid auto désactivé' : 'Raid auto activé jusqu’à la fin du passage de ' + time);
   }
   function shiftEvent(evId, d) {
     var ev = findEvent(evId);
@@ -530,7 +537,7 @@
       var on = f.remindBefore === o[0];
       return '<button class="choice' + (on ? ' on' : '') + '" style="padding:0 12px;height:44px" data-act="evRemind" data-v="' + o[0] + '" aria-pressed="' + on + '">' + o[1] + '</button>';
     }).join('') + '</div></div>';
-    h += '<div class="box row"><div class="grow"><b>Option raid auto</b><span class="hint">Une ligne « Raid auto » par passage. Les comptes en raid auto ne déclenchent pas de rappel.</span></div>' +
+    h += '<div class="box row"><div class="grow"><b>Option raid auto</b><span class="hint">Une ligne « Raid auto » sous chaque passage. Elle ne vaut que pour ce passage et se désactive à sa fin. Les comptes en raid auto ne déclenchent pas de rappel.</span></div>' +
       '<button class="switch' + (f.autoOpt ? ' on' : '') + '" role="switch" aria-checked="' + !!f.autoOpt + '" aria-label="Option raid auto" data-act="evAuto"><i></i></button></div>';
     h += '<div class="field" style="gap:10px"><div class="row-between"><span class="label">Comptes concernés</span>' +
       (data.accounts.length ? '<button class="link-btn" data-act="evAccAll">' + (f.allAccounts ? 'Choisir' : 'Tous') + '</button>' : '') + '</div>' +
@@ -573,7 +580,7 @@
     var f = ui.evForm;
     if (!f || !f.id) return;
     data.events = data.events.filter(function (e) { return e.id !== f.id; });
-    delete data.autoRaid[f.id];
+    Object.keys(data.raid).forEach(function (k) { if (k.split('|')[1] === f.id) delete data.raid[k]; });
     Object.keys(data.progress).forEach(function (k) { if (k.split('|')[1] === f.id) delete data.progress[k]; });
     save(); toast('Événement supprimé'); go('evenements');
   }
@@ -962,7 +969,7 @@
   function deleteAccount(id) {
     data.accounts = data.accounts.filter(function (a) { return a.id !== id; });
     data.tasks.concat(data.events).forEach(function (t) { if (t.accounts) t.accounts = t.accounts.filter(function (x) { return x !== id; }); });
-    Object.keys(data.autoRaid).forEach(function (k) { data.autoRaid[k] = data.autoRaid[k].filter(function (x) { return x !== id; }); });
+    Object.keys(data.raid).forEach(function (k) { if (k.split('|')[2] === id) delete data.raid[k]; });
     Object.keys(data.progress).forEach(function (k) { if (k.split('|')[2] === id) delete data.progress[k]; });
     Object.keys(data.resLog).forEach(function (k) { if (k.split('|')[0] === id) delete data.resLog[k]; });
     ui.editAcc = null; ui.confirmAcc = null;
@@ -1163,7 +1170,7 @@
           var occ = occAt(key, time), at = new Date(occ.getTime() - ev.remindBefore * 60000);
           if (at <= now) return;
           var accs = evAccounts(ev), per = evPer(key, time);
-          var todo = accs.filter(function (a) { return !data.progress[pkey(per, ev, a)] && !isAuto(ev, a); }).length;
+          var todo = accs.filter(function (a) { return !data.progress[pkey(per, ev, a)] && !isAuto(ev, a, per); }).length;
           if (!accs.length || !todo) return;
           push(at, ev.remindBefore ? ev.name + ' dans ' + ev.remindBefore + ' min' : ev.name + ' : c’est maintenant',
             'À ' + time + ' · ' + plural(todo, 'compte', 'comptes') + ' à faire');
@@ -1210,7 +1217,7 @@
     sec: function (el) { ui.collapsed[el.dataset.v] = !ui.collapsed[el.dataset.v]; render(); },
     evDot: function (el) { evToggle(el.dataset.ev, el.dataset.key, el.dataset.time, el.dataset.acc); },
     evAll: function (el) { evAll(el.dataset.ev, el.dataset.key, el.dataset.time); },
-    raid: function (el) { toggleRaid(el.dataset.ev, el.dataset.acc); },
+    raid: function (el) { toggleRaid(el.dataset.ev, el.dataset.key, el.dataset.time, el.dataset.acc); },
     evShift: function (el) { shiftEvent(el.dataset.v, +el.dataset.d); },
     evType: function (el) { ui.evForm.type = el.dataset.v; render(); },
     evEvery: function (el) { ui.evForm.every = Math.min(30, Math.max(2, ui.evForm.every + (+el.dataset.v))); render(); },
