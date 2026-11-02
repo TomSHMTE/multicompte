@@ -60,7 +60,7 @@ h1.small{font-size:24px}
 .empty{border:1px dashed var(--line2);border-radius:14px;padding:22px 16px;text-align:center;color:var(--muted);font-size:14px;line-height:1.5;display:flex;flex-direction:column;gap:12px;align-items:center}
 
 .fab{position:absolute;right:16px;bottom:calc(96px + env(safe-area-inset-bottom));width:60px;height:60px;border-radius:16px;border:0;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;box-shadow:0 8px 24px rgba(163,230,53,.25)}
-.nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid var(--line);padding:8px 8px calc(12px + env(safe-area-inset-bottom));background:var(--nav)}
+.nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--line);padding:8px 8px calc(12px + env(safe-area-inset-bottom));background:var(--nav)}
 .nav button{height:56px;border:0;background:transparent;color:var(--muted);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:12px;font-weight:600}
 .nav button.on{color:var(--accent);font-weight:700}
 
@@ -131,3 +131,14 @@ input[type=time].input,input[type=date].input{color-scheme:dark}
 .step b{font-size:16px}
 
 .toast{position:fixed;left:50%;bottom:calc(110px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--text);color:var(--bg);font-weight:700;font-size:14px;padding:10px 16px;border-radius:10px;z-index:10;max-width:90%;text-align:center}
+
+.res-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.res-cell,.res-total{display:flex;flex-direction:column;gap:6px;min-width:0}
+.res-name{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--muted)}
+.res-dot{width:10px;height:10px;border-radius:3px;flex:none;display:inline-block}
+.res-input{height:48px;font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;padding:0 12px}
+.res-total b{font-size:24px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.delta{font-size:12px;color:var(--muted)}
+.delta.up{color:#A3E635}
+.delta.down{color:#F87171}
+.card.totals{gap:10px}
