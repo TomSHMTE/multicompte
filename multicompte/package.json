@@ -1,0 +1,19 @@
+{
+  "name": "multicompte",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Suivi quotidien des tâches sur plusieurs comptes d'un jeu mobile",
+  "scripts": {
+    "assets": "capacitor-assets generate --android --iconBackgroundColor '#111318' --iconBackgroundColorDark '#111318' --splashBackgroundColor '#111318' --splashBackgroundColorDark '#111318'"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/local-notifications": "^8.3.1",
+    "@capacitor/share": "^8.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^4.0.0",
+    "@capacitor/cli": "^8.6.0"
+  }
+}

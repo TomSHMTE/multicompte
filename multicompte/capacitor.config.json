@@ -1,0 +1,23 @@
+{
+  "appId": "fr.multicompte.app",
+  "appName": "Multicompte",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#111318",
+    "buildOptions": {
+      "releaseType": "APK",
+      "signingType": "apksigner"
+    }
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css",
+      "initialViewportFitValueHint": "cover",
+      "style": "DARK"
+    },
+    "LocalNotifications": {
+      "iconColor": "#A3E635",
+      "smallIcon": "ic_stat_multicompte"
+    }
+  }
+}
