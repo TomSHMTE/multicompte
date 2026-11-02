@@ -191,6 +191,7 @@
       if (r.indexOf('tache-') !== 0) { ui.form = null; ui.confirmTask = false; }
       if (r !== 'reglages') { ui.editAcc = null; ui.confirmAcc = null; ui.confirmWipe = false; }
       if (r !== 'importer') { ui.importPending = null; }
+      ui.counter = null;
       if (r !== 'reglages') { ui.confirmRes = null; }
     }
     var html;
@@ -286,19 +287,22 @@
         var c = Math.min(getCount(per, t, a), r);
         var full = c >= r;
         if (full) n++;
-        var style = full ? 'background:' + a.color : (c > 0 ? 'border-color:' + a.color + ';color:' + a.color : '');
+        var pct = Math.round(c / r * 100);
+        var style = full ? 'background:' + a.color : (c > 0 ? 'border-color:' + a.color + ';color:' + a.color + (r > 1 ? ';background:linear-gradient(to top,' + a.color + '40 ' + pct + '%,transparent ' + pct + '%)' : '') : '');
+        if (ui.counter && ui.counter.t === t.id && ui.counter.a === a.id) style += ';outline:2px solid var(--text);outline-offset:2px';
         return '<button class="dot' + (full ? ' full' : '') + '" style="' + style + '" data-act="dot" data-task="' + t.id + '" data-acc="' + a.id + '" aria-label="' +
           esc(t.name + ' — ' + a.name + (r > 1 ? ' : ' + c + ' sur ' + r : full ? ' : fait' : ' : à faire')) + '">' +
-          esc(initials(a.name)) + (r > 1 ? '<small>' + c + '/' + r + '</small>' : '') + '</button>';
+          esc(initials(a.name)) + (r > 1 ? '<small>' + (r > 999 ? fmtCompact(c) + '/' + fmtCompact(r) : c + '/' + r) + '</small>' : '') + '</button>';
       }).join('');
       var all = accs.length > 0 && n === accs.length;
-      var sub = [t.note, freqLabel(t, today)].filter(Boolean).join(' · ');
+      var sub = [t.note, t.time ? 'à ' + t.time + (t.remindBefore >= 0 ? ' · rappel ' + (t.remindBefore ? t.remindBefore + ' min avant' : 'à l’heure') : '') : '', freqLabel(t, today)].filter(Boolean).join(' · ');
       h += '<div class="card' + (all ? ' done' : '') + '"><div class="task-top">' +
         '<div class="task-name"><b>' + esc(t.name) + '</b>' + (sub ? '<span>' + esc(sub) + '</span>' : '') + '</div>' +
         (all ? '<span class="pill-done">TERMINÉ</span>' : '<span class="count">' + n + '<small>/' + accs.length + '</small></span>') +
         (accs.length ? '<button class="btn-small" data-act="all" data-task="' + t.id + '">' + (all ? 'Annuler' : 'Tout') + '</button>' : '') +
         '<button class="icon-btn ghost" data-act="go" data-to="tache-' + t.id + '" aria-label="Modifier ' + esc(t.name) + '">' + ICON.edit + '</button>' +
-        '</div>' + (accs.length ? '<div class="dots">' + dots + '</div>' : '<span class="hint">Aucun compte sélectionné pour cette tâche.</span>') + '</div>';
+        '</div>' + (accs.length ? '<div class="dots">' + dots + '</div>' : '<span class="hint">Aucun compte sélectionné pour cette tâche.</span>') +
+        counterPanel(t, per) + '</div>';
     });
     h += '</div>';
     if (data.accounts.length) h += '<button class="fab" data-act="go" data-to="tache-new" aria-label="Nouvelle tâche">' + ICON.plus + '</button>';
@@ -306,11 +310,45 @@
     return h;
   }
 
+  // Panneau de compteur, ouvert sous la tâche quand l'objectif est grand (ex. 51/200).
+  function counterPanel(t, per) {
+    if (!ui.counter || ui.counter.t !== t.id) return '';
+    var a = findAcc(ui.counter.a);
+    if (!a) return '';
+    var r = reps(t), c = Math.min(getCount(per, t, a), r);
+    return '<div class="counter"><div class="row-between"><span class="counter-title"><span class="av" style="background:' + a.color + '">' + esc(initials(a.name)) + '</span>' + esc(a.name) + '</span>' +
+      '<button class="link-btn" data-act="cntClose">Fermer</button></div>' +
+      '<div class="counter-main"><button class="cnt-btn" data-act="cnt" data-v="-1" aria-label="Moins 1">−</button>' +
+      '<input id="cnt-input" class="input" inputmode="numeric" enterkeyhint="done" autocomplete="off" aria-label="Avancement pour ' + esc(a.name) + '" data-field="cnt" value="' + c + '">' +
+      '<span class="counter-max">/ ' + fmtNum(r) + '</span><button class="cnt-btn" data-act="cnt" data-v="1" aria-label="Plus 1">+</button></div>' +
+      '<div class="counter-quick"><button class="btn outline sm" data-act="cnt" data-v="-10">−10</button><button class="btn outline sm" data-act="cnt" data-v="10">+10</button>' +
+      '<button class="btn outline sm" data-act="cnt" data-v="50">+50</button><button class="btn primary sm" data-act="cntMax">Terminé</button></div></div>';
+  }
+  function fmtCompact(n) { return n >= 1000 ? (Math.round(n / 100) / 10).toString().replace('.', ',') + 'k' : String(n); }
+  function setCounter(v) {
+    var t = ui.counter && findTask(ui.counter.t), a = ui.counter && findAcc(ui.counter.a);
+    if (!t || !a) return;
+    var per = periodOf(t, gameDay());
+    if (!per) return;
+    var k = pkey(per, t, a), r = reps(t);
+    v = Math.max(0, Math.min(r, Math.round(v)));
+    if (v) data.progress[k] = v; else delete data.progress[k];
+    save(); render();
+  }
+  function counterValue() {
+    var t = findTask(ui.counter.t), a = findAcc(ui.counter.a);
+    var per = t && periodOf(t, gameDay());
+    return per && a ? getCount(per, t, a) : 0;
+  }
   function cycleDot(tid, aid) {
     var t = findTask(tid), a = findAcc(aid);
     if (!t || !a) return;
     var per = periodOf(t, gameDay());
     if (!per) return;
+    if (reps(t) > 5) {
+      ui.counter = (ui.counter && ui.counter.t === tid && ui.counter.a === aid) ? null : { t: tid, a: aid };
+      render(); return;
+    }
     var k = pkey(per, t, a), r = reps(t);
     var c = (data.progress[k] || 0) + 1;
     if (c > r) delete data.progress[k]; else data.progress[k] = c;
@@ -337,7 +375,7 @@
     var t = id !== 'new' ? findTask(id) : null;
     var f = {
       id: t ? t.id : null, name: '', note: '', type: 'daily', days: [weekday(today)], resetDay: 0,
-      every: 2, start: today, from: today, to: keyFromNum(dayNum(today) + 6), reps: 1,
+      every: 2, start: today, from: today, to: keyFromNum(dayNum(today) + 6), reps: 1, time: '', remindBefore: -1,
       allAccounts: true, accounts: data.accounts.map(function (a) { return a.id; })
     };
     if (t) {
@@ -392,9 +430,21 @@
     }[f.type];
     h += '<span class="hint">' + summary + '</span></div>';
 
-    h += '<div class="field" style="gap:10px"><span class="label">Combien de fois par compte</span><div class="stepper"><span><strong>' + f.reps + '</strong> ' +
-      (f.reps > 1 ? 'fois — la case affichera 0/' + f.reps : 'fois — une simple case à cocher') + '</span>' +
-      '<button data-act="reps" data-v="-1" aria-label="Moins">−</button><button data-act="reps" data-v="1" aria-label="Plus">+</button></div></div>';
+    h += '<div class="field" style="gap:10px"><label class="label" for="f-reps">Objectif par compte</label><div class="stepper">' +
+      '<input id="f-reps" class="input reps-input" inputmode="numeric" autocomplete="off" data-field="reps" value="' + f.reps + '"><span>fois</span>' +
+      '<button data-act="reps" data-v="-1" aria-label="Moins">−</button><button data-act="reps" data-v="1" aria-label="Plus">+</button></div>' +
+      '<span class="hint">1 = simple case à cocher. Jusqu’à 5, chaque appui ajoute 1. Au-delà (ex. 200 phalènes), un appui sur la case ouvre un compteur.</span></div>';
+
+    h += '<div class="field" style="gap:10px"><span class="label">Heure et rappel (facultatif)</span><div class="row-between" style="gap:10px">' +
+      '<input type="time" id="f-time" class="input" style="width:140px" aria-label="Heure de la tâche" data-field="time" value="' + esc(f.time || '') + '">' +
+      (f.time ? '<button class="link-btn" data-act="timeClear">Retirer l’heure</button>' : '<span class="hint" style="flex:1">Ex. l’heure de l’arène</span>') + '</div>';
+    if (f.time) {
+      h += '<div class="chips">' + [[-1, 'Pas de rappel'], [0, 'À l’heure'], [5, '5 min avant'], [15, '15 min avant'], [30, '30 min avant'], [60, '1 h avant']].map(function (o) {
+        var on = f.remindBefore === o[0];
+        return '<button class="choice' + (on ? ' on' : '') + '" style="padding:0 12px;height:44px" data-act="remindBefore" data-v="' + o[0] + '" aria-pressed="' + on + '">' + o[1] + '</button>';
+      }).join('') + '</div><span class="hint">La notification ne part pas si tous les comptes ont déjà fait la tâche.</span>';
+    }
+    h += '</div>';
 
     h += '<div class="field" style="gap:10px"><div class="row-between"><span class="label">Comptes concernés</span>' +
       (data.accounts.length ? '<button class="link-btn" data-act="accAllForm">' + (f.allAccounts ? 'Choisir' : 'Tous') + '</button>' : '') + '</div>';
@@ -436,8 +486,10 @@
     var t = {
       id: f.id || uid(), name: f.name.trim(), note: f.note.trim(), type: f.type,
       days: f.days.slice(), resetDay: f.resetDay, every: f.every, start: f.start, from: f.from, to: f.to,
-      reps: f.reps, allAccounts: f.allAccounts, accounts: f.allAccounts ? [] : f.accounts.slice()
+      reps: Math.max(1, Math.min(100000, f.reps || 1)), allAccounts: f.allAccounts, accounts: f.allAccounts ? [] : f.accounts.slice(),
+      time: f.time || '', remindBefore: f.time ? f.remindBefore : -1
     };
+    if (t.time && t.remindBefore >= 0) ensureNotifPermission(true);
     var i = data.tasks.findIndex(function (x) { return x.id === t.id; });
     if (i >= 0) data.tasks[i] = t; else data.tasks.push(t);
     ui.tab = tabOf(t);
@@ -491,6 +543,8 @@
       '<div class="box row"><div class="grow"><b>Rappel du soir</b><span class="hint">Notification s’il reste des cases vides</span></div>' +
       '<button class="switch' + (data.settings.remind ? ' on' : '') + '" role="switch" aria-checked="' + data.settings.remind + '" aria-label="Rappel du soir" data-act="remind"><i></i></button></div>' +
       (data.settings.remind ? '<div class="box row"><label class="grow" for="remind-time"><b>Heure du rappel</b></label><input type="time" id="remind-time" class="input" style="width:120px;height:46px" data-field="remindTime" value="' + esc(data.settings.remindTime) + '"></div>' : '') +
+      (ui.exact && ui.exact !== 'granted' && (data.settings.remind || data.tasks.some(function (t) { return t.time && t.remindBefore >= 0; }))
+        ? '<div class="box row"><div class="grow"><b>Rappels à la minute près</b><span class="hint">Sans cette autorisation, Android peut décaler les rappels de quelques minutes.</span></div><button class="btn primary sm" style="width:auto;padding:0 14px" data-act="exactOpen">Autoriser</button></div>' : '') +
       '</div>';
 
     h += '<div class="field" style="gap:8px"><span class="label">Ressources suivies</span>';
@@ -701,7 +755,7 @@
   }
   function shareTasks() {
     var tasks = data.tasks.map(function (t) {
-      return { name: t.name, note: t.note, type: t.type, days: t.days, resetDay: t.resetDay, every: t.every, from: t.from, to: t.to, reps: t.reps };
+      return { name: t.name, note: t.note, type: t.type, days: t.days, resetDay: t.resetDay, every: t.every, from: t.from, to: t.to, reps: t.reps, time: t.time || '', remindBefore: t.time ? t.remindBefore : -1 };
     });
     shareText('Ma liste de tâches Multicompte',
       'Ma liste de tâches Multicompte. Dans l’appli : Réglages > Importer, puis colle tout ce message.\n\n' + encode({ kind: 'tasks', v: 1, tasks: tasks }));
@@ -751,7 +805,8 @@
           id: uid(), name: String(t.name || 'Tâche').slice(0, 60), note: String(t.note || '').slice(0, 60),
           type: ['daily', 'weekly', 'days', 'every', 'event'].indexOf(t.type) >= 0 ? t.type : 'daily',
           days: Array.isArray(t.days) ? t.days : [0], resetDay: t.resetDay || 0, every: Math.max(2, t.every || 2), start: today,
-          from: t.from || today, to: t.to || today, reps: Math.max(1, Math.min(20, t.reps || 1)), allAccounts: true, accounts: []
+          from: t.from || today, to: t.to || today, reps: Math.max(1, Math.min(100000, t.reps || 1)), allAccounts: true, accounts: [],
+          time: /^\d\d:\d\d$/.test(t.time || '') ? t.time : '', remindBefore: /^\d\d:\d\d$/.test(t.time || '') && t.remindBefore >= 0 ? +t.remindBefore : -1
         });
       });
       toast(plural(p.tasks.length, 'tâche importée', 'tâches importées'));
@@ -772,29 +827,70 @@
   function scheduleReminders() {
     var LN = plugin('LocalNotifications');
     if (!LN) return;
-    var ids = [];
-    for (var i = 0; i < 8; i++) ids.push({ id: REMIND_BASE_ID + i });
-    LN.cancel({ notifications: ids }).catch(function () {}).then(function () {
-      if (!data.settings.remind) return;
-      return LN.checkPermissions().then(function (p) {
-        if (p.display !== 'granted') return;
-        var hm = (data.settings.remindTime || '20:00').split(':');
-        var now = new Date();
-        var s = statsFor(gameDay());
-        var left = s.total - s.done;
-        var list = [];
-        for (var d = 0; d < 8; d++) {
-          var at = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d, +hm[0], +hm[1], 0);
-          if (at <= now) continue;
-          if (d === 0 && left === 0) continue;
-          list.push({
-            id: REMIND_BASE_ID + d, title: 'Multicompte',
-            body: d === 0 ? 'Il te reste ' + plural(left, 'case', 'cases') + ' à cocher aujourd’hui.' : 'Pense à faire tes tâches du jour sur tous tes comptes.',
-            schedule: { at: at, allowWhileIdle: true }
-          });
-        }
-        if (list.length) return LN.schedule({ notifications: list });
-      });
+    var exactOk = true;
+    var checkExact = LN.checkExactNotificationSetting ? LN.checkExactNotificationSetting().then(function (r) { exactOk = r.exact_alarm === 'granted'; ui.exact = r.exact_alarm; }, function () {}) : Promise.resolve();
+    LN.getPending().then(function (r) {
+      var ids = (r.notifications || []).map(function (n) { return { id: n.id }; });
+      return ids.length ? LN.cancel({ notifications: ids }) : null;
+    }).catch(function () {}).then(function () {
+      return Promise.all([LN.checkPermissions(), checkExact]);
+    }).then(function (res) {
+      if (!res || res[0].display !== 'granted') return;
+      var list = buildNotifications(exactOk);
+      if (list.length) return LN.schedule({ notifications: list });
+    }).catch(function () {});
+  }
+  function buildNotifications(exact) {
+    var now = new Date(), list = [], nextId = REMIND_BASE_ID;
+    function push(at, title, body) {
+      list.push({ id: nextId++, title: title, body: body, schedule: { at: at, allowWhileIdle: true }, isExactNotification: exact });
+    }
+    // Rappel du soir
+    if (data.settings.remind) {
+      var hm = (data.settings.remindTime || '20:00').split(':');
+      var s = statsFor(gameDay()), left = s.total - s.done;
+      for (var d = 0; d < 8; d++) {
+        var at = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d, +hm[0], +hm[1], 0);
+        if (at <= now || (d === 0 && left === 0)) continue;
+        push(at, 'Multicompte', d === 0 ? 'Il te reste ' + plural(left, 'case', 'cases') + ' à cocher aujourd’hui.' : 'Pense à faire tes tâches du jour sur tous tes comptes.');
+      }
+    }
+    // Rappels des tâches à heure fixe
+    data.tasks.forEach(function (t) {
+      if (!t.time || !(t.remindBefore >= 0)) return;
+      var tm = t.time.split(':');
+      for (var d = 0; d < 8; d++) {
+        var occ = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d, +tm[0], +tm[1], 0);
+        var at = new Date(occ.getTime() - t.remindBefore * 60000);
+        if (at <= now) continue;
+        var key = occ.toISOString().slice(0, 10);
+        var per = periodOf(t, key);
+        if (!per) continue;
+        var accs = taskAccounts(t);
+        var todo = accs.filter(function (a) { return getCount(per, t, a) < reps(t); }).length;
+        if (!accs.length || !todo) continue;
+        push(at, t.remindBefore ? t.name + ' dans ' + t.remindBefore + ' min' : t.name + ' : c’est l’heure',
+          'À ' + t.time + ' · ' + (todo === accs.length ? 'à faire sur ' + plural(todo, 'compte', 'comptes') : 'encore ' + plural(todo, 'compte', 'comptes') + ' à faire'));
+      }
+    });
+    return list.slice(0, 60);
+  }
+  function ensureNotifPermission(quiet) {
+    var LN = plugin('LocalNotifications');
+    if (!LN) return;
+    LN.checkPermissions().then(function (p) {
+      if (p.display === 'granted') return p;
+      return LN.requestPermissions();
+    }).then(function (p) {
+      if (p.display !== 'granted') { toast('Notifications refusées dans les réglages Android'); return; }
+      queueReminders();
+      if (LN.checkExactNotificationSetting) {
+        LN.checkExactNotificationSetting().then(function (r) {
+          ui.exact = r.exact_alarm;
+          if (r.exact_alarm !== 'granted' && !quiet) toast('Autorise « Alarmes et rappels » dans Réglages pour des rappels pile à l’heure');
+          if (r.exact_alarm !== 'granted' && quiet) setTimeout(function () { toast('Astuce : Réglages > Rappels à la minute près'); }, 2800);
+        }, function () {});
+      }
     }).catch(function () {});
   }
   function toggleRemind() {
@@ -802,7 +898,7 @@
     if (data.settings.remind) { data.settings.remind = false; save(); render(); return; }
     if (!LN) { data.settings.remind = true; save(); render(); toast('Les rappels marchent dans l’appli Android'); return; }
     LN.requestPermissions().then(function (p) {
-      if (p.display === 'granted') { data.settings.remind = true; save(); toast('Rappel activé'); }
+      if (p.display === 'granted') { data.settings.remind = true; save(); toast('Rappel activé'); ensureNotifPermission(true); }
       else toast('Notifications refusées dans les réglages Android');
       render();
     }).catch(function () { toast('Notifications indisponibles'); });
@@ -812,7 +908,7 @@
   var actions = {
     go: function (el) { go(el.dataset.to); },
     welcome: function (el) { data.welcomed = true; save(); go(el.dataset.to); },
-    tab: function (el) { ui.tab = el.dataset.tab; render(); },
+    tab: function (el) { ui.tab = el.dataset.tab; ui.counter = null; render(); },
     dot: function (el) { cycleDot(el.dataset.task, el.dataset.acc); },
     all: function (el) { toggleAll(el.dataset.task); },
     freq: function (el) { ui.form.type = el.dataset.v; render(); },
@@ -823,7 +919,13 @@
       render();
     },
     every: function (el) { ui.form.every = Math.min(30, Math.max(2, ui.form.every + (+el.dataset.v))); render(); },
-    reps: function (el) { ui.form.reps = Math.min(20, Math.max(1, ui.form.reps + (+el.dataset.v))); render(); },
+    reps: function (el) { ui.form.reps = Math.min(100000, Math.max(1, (ui.form.reps || 1) + (+el.dataset.v))); render(); },
+    remindBefore: function (el) { ui.form.remindBefore = +el.dataset.v; render(); },
+    timeClear: function () { ui.form.time = ''; ui.form.remindBefore = -1; render(); },
+    cnt: function (el) { setCounter(counterValue() + (+el.dataset.v)); },
+    cntMax: function () { var t = findTask(ui.counter.t); setCounter(t ? reps(t) : 0); ui.counter = null; render(); },
+    cntClose: function () { ui.counter = null; render(); },
+    exactOpen: function () { var LN = plugin('LocalNotifications'); if (LN && LN.changeExactNotificationSetting) LN.changeExactNotificationSetting().catch(function () {}); },
     accForm: function (el) {
       var f = ui.form, id = el.dataset.v;
       if (f.allAccounts) { f.allAccounts = false; f.accounts = data.accounts.map(function (a) { return a.id; }); }
@@ -885,6 +987,7 @@
     else if (f === 'draft') { ui.draft.name = el.value; var b = document.getElementById('acc-add'); if (b) b.disabled = !el.value.trim(); }
     else if (f === 'accName') { var a = findAcc(el.dataset.v); if (a && el.value.trim()) { a.name = el.value.trim(); save(); } }
     else if (f === 'importText') { ui.importText = el.value; }
+    else if (f === 'reps' && ui.form) { var rv = parseInt(el.value.replace(/\D/g, ''), 10); ui.form.reps = Math.max(1, Math.min(100000, rv || 1)); }
     else if (f === 'resDraft') { ui.resDraft = el.value; var rb = document.getElementById('res-add'); if (rb) rb.disabled = !el.value.trim(); }
     else if (f === 'resName') { var rr = data.resources.filter(function (x) { return x.id === el.dataset.v; })[0]; if (rr && el.value.trim()) { rr.name = el.value.trim(); save(); } }
   });
@@ -893,16 +996,30 @@
     if (f === 'remindTime' && el.value) { data.settings.remindTime = el.value; save(); }
     if (f === 'accName' || f === 'resName') render();
     if (f === 'res') applyResInput(el);
+    if (f === 'time' && ui.form) { ui.form.time = el.value; if (el.value && ui.form.remindBefore < 0 && !ui.form.id) ui.form.remindBefore = 15; render(); }
+    if (f === 'cnt' && ui.counter) {
+      var raw = el.value.replace(/\s/g, ''), m = raw.match(/^([+-]?)(\d+)$/);
+      if (!m) { render(); return; }
+      var cur = counterValue(), n = +m[2];
+      setCounter(m[1] === '+' ? cur + n : m[1] === '-' ? cur - n : n);
+    }
   });
   app.addEventListener('keydown', function (e) {
     var fld = e.target.dataset && e.target.dataset.field;
     if (e.key !== 'Enter') return;
     if (fld === 'draft') { e.preventDefault(); addAccount(); }
     else if (fld === 'resDraft') { e.preventDefault(); addResource(); }
-    else if (fld === 'res') { e.preventDefault(); e.target.blur(); }
+    else if (fld === 'res' || fld === 'cnt' || fld === 'reps') { e.preventDefault(); e.target.blur(); }
   });
   window.addEventListener('hashchange', render);
-  document.addEventListener('visibilitychange', function () { if (!document.hidden && checkDay()) render(); });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) return;
+    checkDay();
+    var LN = plugin('LocalNotifications');
+    if (LN && LN.checkExactNotificationSetting) {
+      LN.checkExactNotificationSetting().then(function (r) { var ch = ui.exact !== r.exact_alarm; ui.exact = r.exact_alarm; if (ch) queueReminders(); render(); }, function () { render(); });
+    } else render();
+  });
   setInterval(function () { if (checkDay()) render(); }, 30000);
 
   render();

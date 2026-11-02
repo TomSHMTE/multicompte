@@ -142,3 +142,13 @@ input[type=time].input,input[type=date].input{color-scheme:dark}
 .delta.up{color:#A3E635}
 .delta.down{color:#F87171}
 .card.totals{gap:10px}
+
+.counter{border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:10px}
+.counter-title{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px}
+.counter-main{display:flex;align-items:center;gap:8px}
+.counter-main .input{height:52px;flex:1;min-width:0;text-align:center;font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+.counter-max{font-size:18px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;flex:none}
+.cnt-btn{width:52px;height:52px;border-radius:10px;border:1px solid var(--line2);background:transparent;font-size:24px;font-weight:700;flex:none}
+.counter-quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.counter-quick .btn{padding:0 4px}
+.reps-input{height:44px;width:110px;flex:none;text-align:center;font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
