@@ -25,7 +25,10 @@ jobs:
           java-version: 21
 
       - name: Vérifier le SDK Android
-        run: echo "ANDROID_HOME=$ANDROID_HOME" && ls "$ANDROID_HOME"
+        run: |
+          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n1)"
+          echo "Outils de compilation : $BT"
+          echo "$BT" >> "$GITHUB_PATH"
 
       - name: Installer les dépendances
         run: npm ci
