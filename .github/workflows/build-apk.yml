@@ -36,6 +36,7 @@ jobs:
       - name: Créer le projet Android
         run: |
           npx cap add android
+          sed -i 's/networkTimeout=[0-9]*/networkTimeout=120000/' android/gradle/wrapper/gradle-wrapper.properties
           npm run assets
           cp -r android-res/. android/app/src/main/res/
 
