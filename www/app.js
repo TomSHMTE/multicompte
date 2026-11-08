@@ -1456,7 +1456,7 @@
   // Appui ou glissé sur le graphique : affiche la valeur du jour touché ; relâcher remet la dernière valeur.
   var chartDrag = false;
   app.addEventListener('pointerdown', function (e) {
-    var c = e.target.closest('.chart');
+    var c = e.target.closest && e.target.closest('.chart');
     if (!c) return;
     chartDrag = true; chartPickAt(c, e.clientX);
   });
@@ -1466,7 +1466,8 @@
     if (c) chartPickAt(c, e.clientX);
   });
   window.addEventListener('pointerup', function () { if (chartDrag) { chartDrag = false; setTimeout(function () { if (!chartDrag) { ui.chartPick = null; render(); } }, 1500); } });
-  window.addEventListener('pointercancel', function () { chartDrag = false; ui.chartPick = null; render(); });
+  // Ne réagit qu'à un geste commencé sur le graphique : sinon le défilement de l'écran serait interrompu.
+  window.addEventListener('pointercancel', function () { if (!chartDrag) return; chartDrag = false; ui.chartPick = null; render(); });
   window.addEventListener('hashchange', render);
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) return;
