@@ -36,7 +36,20 @@ jobs:
       - name: Créer le projet Android
         run: |
           npx cap add android
-          sed -i 's/networkTimeout=[0-9]*/networkTimeout=120000/' android/gradle/wrapper/gradle-wrapper.properties
+          # Télécharge Gradle avec plusieurs essais (le serveur officiel tombe parfois en panne)
+          PROPS=android/gradle/wrapper/gradle-wrapper.properties
+          V=$(grep distributionUrl "$PROPS" | sed -E 's/.*gradle-([0-9.]+)-(all|bin)\.zip.*/\1/')
+          echo "Gradle $V"
+          ZIP="$RUNNER_TEMP/gradle-$V-bin.zip"
+          for i in 1 2 3 4 5 6; do
+            curl -fL --retry 3 --retry-all-errors --connect-timeout 20 -o "$ZIP" "https://services.gradle.org/distributions/gradle-$V-bin.zip" && break
+            curl -fL --retry 3 --retry-all-errors --connect-timeout 20 -o "$ZIP" "https://github.com/gradle/gradle-distributions/releases/download/v$V/gradle-$V-bin.zip" && break
+            echo "Essai $i raté, nouvelle tentative dans 30 s"; sleep 30
+          done
+          test -s "$ZIP"
+          sed -i "s#^distributionUrl=.*#distributionUrl=file\\\\:$ZIP#" "$PROPS"
+          sed -i 's/networkTimeout=[0-9]*/networkTimeout=120000/' "$PROPS"
+          cat "$PROPS"
           npm run assets
           cp -r android-res/. android/app/src/main/res/
 
