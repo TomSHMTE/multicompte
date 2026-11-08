@@ -187,7 +187,7 @@
   }
 
   /* ---------- état de l'interface ---------- */
-  var ui = { tab: 'jour', collapsed: {}, evForm: null, confirmEv: false, form: null, editAcc: null, confirmAcc: null, confirmTask: false,
+  var ui = { chart: { res: 'pepites', scope: 'total', days: 30 }, chartPick: null, tab: 'jour', collapsed: {}, evForm: null, confirmEv: false, form: null, editAcc: null, confirmAcc: null, confirmTask: false,
     draft: { name: '', color: PALETTE[0][0] }, importText: '', importPending: null, confirmWipe: false };
   var app = document.getElementById('app');
 
@@ -207,6 +207,7 @@
       if (r !== 'importer') { ui.importPending = null; }
       ui.counter = null;
       if (r !== 'reglages') { ui.confirmRes = null; }
+      ui.chartPick = null;
     }
     var html;
     if (r === 'reglages') html = viewSettings();
@@ -879,6 +880,110 @@
     var diff = dayNum(gameDay()) - dayNum(key);
     return diff === 1 ? 'depuis hier' : 'depuis le ' + fmtDay(key, { day: 'numeric', month: 'short' });
   }
+  /* ---------- graphique des ressources ---------- */
+  // Série d'une ressource, jour par jour, pour un compte ou pour le total (dernière valeur connue reportée).
+  function resSeries(rid, scope, days) {
+    var today = dayNum(gameDay()), start = today - days + 1;
+    var accs = scope === 'total' ? data.accounts : data.accounts.filter(function (a) { return a.id === scope; });
+    var logs = accs.map(function (a) { return (data.resLog[resKey(a.id, rid)] || []).map(function (e) { return [dayNum(e[0]), e[1]]; }); });
+    var pts = [];
+    for (var d = start; d <= today; d++) {
+      var sum = 0, any = false;
+      logs.forEach(function (log) {
+        var v = null;
+        for (var i = 0; i < log.length && log[i][0] <= d; i++) v = log[i][1];
+        if (v !== null) { sum += v; any = true; }
+      });
+      pts.push(any ? sum : null);
+    }
+    var first = pts.findIndex(function (v) { return v !== null; });
+    return { start: start, pts: first < 0 ? [] : pts.slice(first), offset: first < 0 ? 0 : first };
+  }
+  function chartCard() {
+    var ch = ui.chart;
+    if (!data.resources.some(function (r) { return r.id === ch.res; })) ch.res = data.resources[0].id;
+    if (ch.scope !== 'total' && !findAcc(ch.scope)) ch.scope = 'total';
+    var res = data.resources.filter(function (r) { return r.id === ch.res; })[0];
+    var color = ch.scope === 'total' ? res.color : findAcc(ch.scope).color;
+    var ser = resSeries(ch.res, ch.scope, ch.days);
+    var h = '<div class="card chart-card">';
+    if (data.resources.length > 1) {
+      h += '<div class="seg" role="group" aria-label="Ressource">' + data.resources.map(function (r) {
+        var on = r.id === ch.res;
+        return '<button class="seg-btn' + (on ? ' on' : '') + '" aria-pressed="' + on + '" data-act="chRes" data-v="' + r.id + '"><span class="res-dot" style="background:' + r.color + '"></span>' + esc(r.name) + '</button>';
+      }).join('') + '</div>';
+    }
+    h += '<div class="chips scope-chips" role="group" aria-label="Comptes">' +
+      '<button class="scope' + (ch.scope === 'total' ? ' on' : '') + '" aria-pressed="' + (ch.scope === 'total') + '" data-act="chScope" data-v="total">Total</button>' +
+      data.accounts.map(function (a) {
+        var on = ch.scope === a.id;
+        return '<button class="scope' + (on ? ' on' : '') + '" style="' + (on ? 'border-color:' + a.color : '') + '" aria-pressed="' + on + '" data-act="chScope" data-v="' + a.id + '"><span class="av" style="width:22px;height:22px;font-size:9px;border-radius:5px;background:' + a.color + '">' + esc(initials(a.name)) + '</span>' + esc(a.name) + '</button>';
+      }).join('') + '</div>';
+    var known = ser.pts.filter(function (v) { return v !== null; });
+    if (known.length < 2) {
+      h += '<div class="chart-empty">' + (known.length ? 'Une seule valeur notée pour l’instant. La courbe apparaîtra dès le deuxième jour.' : 'Aucune valeur notée sur cette période. Remplis les champs ci-dessous, la courbe se construit jour après jour.') + '</div>';
+    } else {
+      var last = known[known.length - 1], firstV = known[0], d = last - firstV;
+      var pick = ui.chartPick != null && ui.chartPick < ser.pts.length ? ui.chartPick : null;
+      var pickV = pick != null ? ser.pts[pick] : null;
+      var pickDay = keyFromNum(ser.start + ser.offset + (pick != null ? pick : ser.pts.length - 1));
+      h += '<div class="chart-head"><div><b class="chart-val">' + fmtNum(pick != null ? pickV : last) + '</b>' +
+        '<span class="hint"> ' + esc(res.name) + (pick != null ? ' le ' + esc(fmtDay(pickDay, { day: 'numeric', month: 'short' })) : ' aujourd’hui') + '</span></div>' +
+        (pick != null ? '' : '<span class="delta ' + (d > 0 ? 'up' : d < 0 ? 'down' : '') + '">' + (d > 0 ? '+' : d < 0 ? '−' : '=') + (d ? fmtNum(Math.abs(d)) : '') + ' sur ' + ser.pts.length + ' j</span>') + '</div>';
+      h += chartSvg(ser, color, pick);
+    }
+    h += '<div class="seg small" role="group" aria-label="Période">' + [7, 30, 90].map(function (n) {
+      return '<button class="seg-btn' + (ch.days === n ? ' on' : '') + '" aria-pressed="' + (ch.days === n) + '" data-act="chDays" data-v="' + n + '">' + n + ' j</button>';
+    }).join('') + '</div></div>';
+    return h;
+  }
+  function chartSvg(ser, color, pick) {
+    var W = 340, H = 150, L = 4, Rr = 4, T = 10, B = 22;
+    var vals = ser.pts.filter(function (v) { return v !== null; });
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+    if (min === max) { min = Math.max(0, min - 1); max = max + 1; }
+    var pad = (max - min) * 0.12; min = Math.max(0, min - pad); max = max + pad;
+    var n = ser.pts.length;
+    function x(i) { return L + (n === 1 ? (W - L - Rr) / 2 : i * (W - L - Rr) / (n - 1)); }
+    function y(v) { return T + (1 - (v - min) / (max - min)) * (H - T - B); }
+    var line = '', area = '', started = false, lastI = 0;
+    ser.pts.forEach(function (v, i) {
+      if (v === null) return;
+      line += (started ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1) + ' ';
+      if (!started) area = 'M' + x(i).toFixed(1) + ' ' + (H - B) + ' ';
+      area += 'L' + x(i).toFixed(1) + ' ' + y(v).toFixed(1) + ' ';
+      started = true; lastI = i;
+    });
+    area += 'L' + x(lastI).toFixed(1) + ' ' + (H - B) + ' Z';
+    var gid = 'g' + color.slice(1);
+    var grid = [0.25, 0.5, 0.75].map(function (f) { var yy = (T + f * (H - T - B)).toFixed(1); return '<line x1="0" x2="' + W + '" y1="' + yy + '" y2="' + yy + '" class="ch-grid"/>'; }).join('');
+    var fd = function (k) { return esc(fmtDay(keyFromNum(ser.start + ser.offset + k), { day: 'numeric', month: 'short' })); };
+    var mark = pick != null && ser.pts[pick] !== null ? pick : lastI;
+    var mv = ser.pts[mark];
+    return '<div class="chart" data-n="' + n + '"><svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" role="img" aria-label="Évolution sur la période, de ' + fmtNum(vals[0]) + ' à ' + fmtNum(vals[vals.length - 1]) + '">' +
+      '<defs><linearGradient id="' + gid + '" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="' + color + '" stop-opacity=".35"/><stop offset="1" stop-color="' + color + '" stop-opacity="0"/></linearGradient></defs>' +
+      grid + '<line x1="0" x2="' + W + '" y1="' + (H - B) + '" y2="' + (H - B) + '" class="ch-axis"/>' +
+      '<path d="' + area + '" fill="url(#' + gid + ')"/>' +
+      '<path d="' + line + '" fill="none" stroke="' + color + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>' +
+      (pick != null ? '<line x1="' + x(mark).toFixed(1) + '" x2="' + x(mark).toFixed(1) + '" y1="' + T + '" y2="' + (H - B) + '" class="ch-cursor" vector-effect="non-scaling-stroke"/>' : '') +
+      '</svg>' +
+      '<span class="ch-dot" style="left:' + (x(mark) / W * 100).toFixed(2) + '%;top:' + (y(mv) / H * 100).toFixed(2) + '%;background:' + color + '"></span>' +
+      '<span class="ch-y top">' + fmtCompact2(max) + '</span><span class="ch-y bot">' + fmtCompact2(min) + '</span>' +
+      '<span class="ch-x left">' + fd(0) + '</span><span class="ch-x right">' + fd(n - 1) + '</span></div>';
+  }
+  function fmtCompact2(v) {
+    v = Math.round(v);
+    if (v >= 1e6) return (Math.round(v / 1e5) / 10).toString().replace('.', ',') + ' M';
+    if (v >= 1e4) return Math.round(v / 1000) + ' k';
+    return fmtNum(v);
+  }
+  function chartPickAt(el, clientX) {
+    var r = el.getBoundingClientRect(), n = +el.dataset.n;
+    var f = Math.max(0, Math.min(1, (clientX - r.left - r.width * 4 / 340) / (r.width * 332 / 340)));
+    var i = Math.round(f * (n - 1));
+    if (i !== ui.chartPick) { ui.chartPick = i; render(); }
+  }
+
   function viewResources() {
     var today = gameDay();
     var h = '<div class="screen"><div class="head"><div style="display:flex;flex-direction:column;gap:2px"><span class="kicker">Ressources · ' +
@@ -902,6 +1007,7 @@
           '<b>' + (any ? fmtNum(tot) : '—') + '</b>' + (anyPrev ? deltaHtml(delta, since) : '') + '</div>';
       });
       h += '</div></div>';
+      h += chartCard();
       // Par compte
       data.accounts.forEach(function (a) {
         h += '<div class="card"><div class="task-top"><span class="av lg" style="background:' + a.color + '">' + esc(initials(a.name)) + '</span>' +
@@ -1214,6 +1320,9 @@
     go: function (el) { go(el.dataset.to); },
     welcome: function (el) { data.welcomed = true; save(); go(el.dataset.to); },
     tab: function (el) { ui.tab = el.dataset.tab; ui.counter = null; render(); },
+    chRes: function (el) { ui.chart.res = el.dataset.v; ui.chartPick = null; render(); },
+    chScope: function (el) { ui.chart.scope = el.dataset.v; ui.chartPick = null; render(); },
+    chDays: function (el) { ui.chart.days = +el.dataset.v; ui.chartPick = null; render(); },
     sec: function (el) { ui.collapsed[el.dataset.v] = !ui.collapsed[el.dataset.v]; render(); },
     evDot: function (el) { evToggle(el.dataset.ev, el.dataset.key, el.dataset.time, el.dataset.acc); },
     evAll: function (el) { evAll(el.dataset.ev, el.dataset.key, el.dataset.time); },
@@ -1344,6 +1453,20 @@
     else if (fld === 'resDraft') { e.preventDefault(); addResource(); }
     else if (fld === 'res' || fld === 'cnt' || fld === 'reps') { e.preventDefault(); e.target.blur(); }
   });
+  // Appui ou glissé sur le graphique : affiche la valeur du jour touché ; relâcher remet la dernière valeur.
+  var chartDrag = false;
+  app.addEventListener('pointerdown', function (e) {
+    var c = e.target.closest('.chart');
+    if (!c) return;
+    chartDrag = true; chartPickAt(c, e.clientX);
+  });
+  app.addEventListener('pointermove', function (e) {
+    if (!chartDrag) return;
+    var c = app.querySelector('.chart');
+    if (c) chartPickAt(c, e.clientX);
+  });
+  window.addEventListener('pointerup', function () { if (chartDrag) { chartDrag = false; setTimeout(function () { if (!chartDrag) { ui.chartPick = null; render(); } }, 1500); } });
+  window.addEventListener('pointercancel', function () { chartDrag = false; ui.chartPick = null; render(); });
   window.addEventListener('hashchange', render);
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) return;
