@@ -41,7 +41,9 @@ h1.small{font-size:24px}
 .tab.on .badge{background:var(--on-accent);color:var(--accent)}
 
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:12px}
-.card.done{border-color:#4D6B1E}
+.card.done{border-color:var(--line);opacity:.5;filter:saturate(.35)}
+.card.done .pill-done{background:var(--track);color:var(--muted)}
+.empty.ok-all{color:var(--accent);border-color:#4D6B1E;padding:14px}
 .task-top{display:flex;align-items:center;gap:8px}
 .task-name{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .task-name b{font-size:17px;line-height:1.2;overflow-wrap:anywhere}

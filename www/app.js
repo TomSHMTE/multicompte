@@ -109,7 +109,7 @@
         return 'e' + Math.floor(diff / Math.max(2, t.every || 2));
       case 'event':
         if (!t.from || !t.to || key < t.from || key > t.to) return null;
-        return 'd' + key;
+        return t.once ? 'p' + t.from : 'd' + key; // « une seule fois » : un seul compteur pour toute la période
     }
     return null;
   }
@@ -130,7 +130,7 @@
         var n = Math.max(2, t.every || 2);
         var left = n - ((dayNum(key) - dayNum(t.start || key)) % n);
         return 'Tous les ' + n + ' j · reset ' + (left === 1 ? 'cette nuit' : 'dans ' + left + ' j');
-      case 'event': return 'Jusqu’au ' + fmtDay(t.to, { day: 'numeric', month: 'short' });
+      case 'event': return 'Jusqu’au ' + fmtDay(t.to, { day: 'numeric', month: 'short' }) + (t.once ? ' · sans remise à zéro' : '');
     }
     return '';
   }
@@ -177,7 +177,7 @@
         return;
       }
       if (!(tid in current)) { delete data.progress[k]; return; }
-      if (per.charAt(0) === 'e') { if (per !== current[tid]) delete data.progress[k]; return; }
+      if (per.charAt(0) === 'e' || per.charAt(0) === 'p') { if (per !== current[tid]) delete data.progress[k]; return; }
       if (per.slice(1) < limit) delete data.progress[k];
     });
     Object.keys(data.raid).forEach(function (k) {
@@ -285,21 +285,29 @@
     } else if (!data.tasks.length) {
       h += '<div class="empty">Aucune tâche. Appuie sur + pour créer la première,<br>ou importe la liste d’un ami dans Réglages.</div>';
     }
-    var shown = 0;
+    var shown = 0, finished = [];
     groups.forEach(function (g) {
       var list = data.tasks.filter(function (t) { return tabOf(t) === g[0] && periodOf(t, today); });
       if (!list.length) return;
       shown++;
+      // Ce qui reste à faire en haut ; les tâches terminées par tous les comptes partent dans « Terminé », tout en bas.
+      var open = list.filter(function (t) { if (taskDone(t, today)) { finished.push(t); return false; } return true; });
+      if (!open.length) return;
       var st = statsFor(today, g[0]), left = st.total - st.done;
       var closed = !!ui.collapsed[g[0]];
       h += '<button class="sec-head' + (closed ? ' closed' : '') + '" data-act="sec" data-v="' + g[0] + '" aria-expanded="' + !closed + '">' + ICON.chev + g[1] +
-        '<span class="sec-count' + (left ? '' : ' ok') + '">' + (st.total ? (left ? plural(left, 'case', 'cases') + ' à cocher' : 'Tout est fait') : '') + '</span></button>';
+        '<span class="sec-count">' + plural(left, 'case', 'cases') + ' à cocher</span></button>';
       if (closed) return;
-      // Les tâches terminées passent en bas de leur section.
-      var open = [], finished = [];
-      list.forEach(function (t) { (taskDone(t, today) ? finished : open).push(t); });
-      open.concat(finished).forEach(function (t) { h += taskCard(t, today); });
+      open.forEach(function (t) { h += taskCard(t, today); });
     });
+    if (finished.length) {
+      var allDone = finished.length === data.tasks.filter(function (t) { return periodOf(t, today); }).length;
+      if (allDone) h += '<div class="empty ok-all">Tout est fait pour aujourd’hui sur tous les comptes.</div>';
+      var cl = !!ui.collapsed.done;
+      h += '<button class="sec-head' + (cl ? ' closed' : '') + '" data-act="sec" data-v="done" aria-expanded="' + !cl + '">' + ICON.chev + 'Terminé' +
+        '<span class="sec-count ok">' + plural(finished.length, 'tâche', 'tâches') + '</span></button>';
+      if (!cl) finished.forEach(function (t) { h += taskCard(t, today); });
+    }
     if (data.accounts.length && data.tasks.length && !shown) h += '<div class="empty">Rien à faire aujourd’hui.</div>';
     h += '</div>';
     if (data.accounts.length) h += '<button class="fab" data-act="go" data-to="tache-new" aria-label="Nouvelle tâche">' + ICON.plus + '</button>';
@@ -399,7 +407,9 @@
     } else {
       h += '<div class="sec-head static">Aujourd’hui<span class="sec-count">' + plural(occs.length, 'passage', 'passages') + '</span></div>';
       if (!occs.length) h += '<div class="empty" style="padding:16px">Aucun événement aujourd’hui.</div>';
-      occs.forEach(function (o) { h += occCard(o.ev, todayKey, o.time, now); });
+      // Passages faits par tous les comptes : en bas, grisés.
+      var occDone = function (o) { var accs = evAccounts(o.ev), per = evPer(todayKey, o.time); return accs.length > 0 && accs.every(function (a) { return data.progress[pkey(per, o.ev, a)]; }); };
+      occs.filter(function (o) { return !occDone(o); }).concat(occs.filter(occDone)).forEach(function (o) { h += occCard(o.ev, todayKey, o.time, now); });
       h += '<div class="sec-head static" style="margin-top:8px">Mes événements</div>';
       data.events.forEach(function (ev) {
         var nx = nextOcc(ev, now);
@@ -695,14 +705,17 @@
     }
     if (f.type === 'event') {
       h += '<div class="grid2"><div class="field"><label class="hint" for="f-from">Du</label><input type="date" id="f-from" class="input" data-field="from" value="' + esc(f.from) + '"></div>' +
-        '<div class="field"><label class="hint" for="f-to">Au</label><input type="date" id="f-to" class="input" data-field="to" value="' + esc(f.to) + '"></div></div>';
+        '<div class="field"><label class="hint" for="f-to">Au</label><input type="date" id="f-to" class="input" data-field="to" value="' + esc(f.to) + '"></div></div>' +
+        '<span class="hint">Remise à zéro :</span><div class="grid2">' +
+        '<button class="choice' + (!f.once ? ' on' : '') + '" data-act="once" data-v="0" aria-pressed="' + !f.once + '">Chaque jour</button>' +
+        '<button class="choice' + (f.once ? ' on' : '') + '" data-act="once" data-v="1" aria-pressed="' + !!f.once + '">Jamais (toute la période)</button></div>';
     }
     var summary = {
       daily: 'Remise à zéro chaque jour avec le jeu (' + resetClock() + ').',
       weekly: 'À faire une fois par semaine. Remise à zéro le ' + DAYS[f.resetDay][1] + '.',
       days: f.days.length ? 'Apparaît le ' + f.days.slice().sort().map(function (d) { return DAYS[d][1]; }).join(', ') + '.' : 'Choisis au moins un jour.',
       every: 'À faire une fois tous les ' + f.every + ' jours' + (editing ? '.' : ', à partir d’aujourd’hui.'),
-      event: 'À faire chaque jour entre ces deux dates, puis la tâche disparaît.'
+      event: f.once ? 'Objectif à atteindre une seule fois entre ces deux dates : l’avancement se cumule jusqu’à la fin, sans remise à zéro.' : 'À faire chaque jour entre ces deux dates, puis la tâche disparaît.'
     }[f.type];
     h += '<span class="hint">' + summary + '</span></div>';
 
@@ -761,12 +774,22 @@
     if (!f || formIssues(f)) return;
     var t = {
       id: f.id || uid(), name: f.name.trim(), note: f.note.trim(), type: f.type,
-      days: f.days.slice(), resetDay: f.resetDay, every: f.every, start: f.start, from: f.from, to: f.to,
+      days: f.days.slice(), resetDay: f.resetDay, every: f.every, start: f.start, from: f.from, to: f.to, once: f.type === 'event' && !!f.once,
       reps: Math.max(1, Math.min(100000, f.reps || 1)), allAccounts: f.allAccounts, accounts: f.allAccounts ? [] : f.accounts.slice(),
       time: f.time || '', remindBefore: f.time ? f.remindBefore : -1
     };
     if (t.time && t.remindBefore >= 0) ensureNotifPermission(true);
     var i = data.tasks.findIndex(function (x) { return x.id === t.id; });
+    if (i >= 0 && ui.migrateOnce) {
+      var today = gameDay(), oldPer = periodOf(data.tasks[i], today), newPer = periodOf(t, today);
+      if (oldPer && newPer && oldPer !== newPer) {
+        data.accounts.forEach(function (a) {
+          var v = data.progress[pkey(oldPer, t, a)];
+          if (v) data.progress[pkey(newPer, t, a)] = Math.max(v, data.progress[pkey(newPer, t, a)] || 0);
+        });
+      }
+    }
+    ui.migrateOnce = false;
     if (i >= 0) data.tasks[i] = t; else data.tasks.push(t);
     ui.tab = tabOf(t);
     save();
@@ -1137,7 +1160,7 @@
   }
   function shareTasks() {
     var tasks = data.tasks.map(function (t) {
-      return { name: t.name, note: t.note, type: t.type, days: t.days, resetDay: t.resetDay, every: t.every, from: t.from, to: t.to, reps: t.reps, time: t.time || '', remindBefore: t.time ? t.remindBefore : -1 };
+      return { name: t.name, note: t.note, type: t.type, days: t.days, resetDay: t.resetDay, every: t.every, from: t.from, to: t.to, once: !!t.once, reps: t.reps, time: t.time || '', remindBefore: t.time ? t.remindBefore : -1 };
     });
     shareText('Ma liste de tâches Multicompte',
       'Ma liste de tâches Multicompte. Dans l’appli : Réglages > Importer, puis colle tout ce message.\n\n' + encode({ kind: 'tasks', v: 2, tasks: tasks,
@@ -1190,7 +1213,7 @@
           id: uid(), name: String(t.name || 'Tâche').slice(0, 60), note: String(t.note || '').slice(0, 60),
           type: ['daily', 'weekly', 'days', 'every', 'event'].indexOf(t.type) >= 0 ? t.type : 'daily',
           days: Array.isArray(t.days) ? t.days : [0], resetDay: t.resetDay || 0, every: Math.max(2, t.every || 2), start: today,
-          from: t.from || today, to: t.to || today, reps: Math.max(1, Math.min(100000, t.reps || 1)), allAccounts: true, accounts: [],
+          from: t.from || today, to: t.to || today, once: t.type === 'event' && !!t.once, reps: Math.max(1, Math.min(100000, t.reps || 1)), allAccounts: true, accounts: [],
           time: /^\d\d:\d\d$/.test(t.time || '') ? t.time : '', remindBefore: /^\d\d:\d\d$/.test(t.time || '') && t.remindBefore >= 0 ? +t.remindBefore : -1
         });
       });
@@ -1357,6 +1380,13 @@
       render();
     },
     every: function (el) { ui.form.every = Math.min(30, Math.max(2, ui.form.every + (+el.dataset.v))); render(); },
+    once: function (el) {
+      var f = ui.form, was = !!f.once;
+      f.once = el.dataset.v === '1';
+      // Garde l'avancement déjà fait aujourd'hui quand on change de mode sur une tâche existante.
+      if (f.id && was !== f.once) ui.migrateOnce = true;
+      render();
+    },
     reps: function (el) { ui.form.reps = Math.min(100000, Math.max(1, (ui.form.reps || 1) + (+el.dataset.v))); render(); },
     remindBefore: function (el) { ui.form.remindBefore = +el.dataset.v; render(); },
     timeClear: function () { ui.form.time = ''; ui.form.remindBefore = -1; render(); },
