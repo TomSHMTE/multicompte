@@ -197,3 +197,17 @@ input[type=time].input,input[type=date].input{color-scheme:dark}
 .ch-x.left{left:0}
 .ch-x.right{right:0}
 .chart-empty{border:1px dashed var(--line2);border-radius:10px;padding:18px 14px;font-size:13px;color:var(--muted);text-align:center;line-height:1.5}
+
+.ev-icon{color:var(--accent);display:flex;align-items:center;justify-content:center;width:52px}
+.up-list{display:flex;flex-direction:column;gap:2px}
+.up-row{display:flex;align-items:center;gap:10px;min-height:36px;font-size:14px;border-top:1px solid var(--line);padding-top:6px;font-variant-numeric:tabular-nums}
+.up-row:first-child{border-top:0;padding-top:0}
+.up-row .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.up-row .hint{font-size:12px;flex:none;min-width:58px;text-align:right}
+.kind-btn{display:flex;align-items:flex-start;gap:14px;text-align:left;width:100%;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 16px;color:var(--text)}
+.kind-btn b{font-size:18px;display:block;margin-bottom:4px}
+.kind-btn .grow{flex:1;display:flex;flex-direction:column}
+.kind-ic{width:44px;height:44px;border-radius:10px;background:var(--track);color:var(--accent);display:flex;align-items:center;justify-content:center;flex:none}
+.spark-row{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 10px;flex-wrap:wrap}
+.spark-row .grow{flex:1;min-width:80px}
+.spark-row .input{height:44px;width:auto;flex:1 1 190px;font-size:14px;padding:0 10px}
