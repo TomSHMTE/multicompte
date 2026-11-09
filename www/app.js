@@ -490,7 +490,7 @@
   }
   function sparkUpcoming(ev, now, end) {
     var rows = evAccounts(ev).map(function (a) { return { a: a, next: sparkState(ev, a).next || 0 }; })
-      .filter(function (r) { return r.next >= end; }).sort(function (x, y) { return x.next - y.next; }).slice(0, 1); // seulement la plus proche
+      .filter(function (r) { return r.next >= end; }).sort(function (x, y) { return x.next - y.next; }); // la prochaine de chaque compte, dans l'ordre chronologique
     var h = '<div class="card"><div class="task-top"><div class="task-name"><b>' + esc(ev.name) + '</b><span>' +
       esc('Revient ' + SPARK_DAYS + ' j après avoir été faite' + (ev.remind ? ' · rappel quand elle revient' : '')) + '</span></div>' +
       '<button class="icon-btn ghost" data-act="go" data-to="evenement-' + ev.id + '" aria-label="Modifier ' + esc(ev.name) + '">' + ICON.edit + '</button></div>';
