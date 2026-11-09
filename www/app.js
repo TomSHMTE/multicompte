@@ -472,10 +472,10 @@
   }
   function arenaUpcoming(ev, nowD) {
     var list = [], start = new Date(nowD.getFullYear(), nowD.getMonth(), nowD.getDate() + 1);
-    for (var d = 0; d < 90 && list.length < 4; d++) {
+    for (var d = 0; d < 90 && !list.length; d++) {
       var key = localKey(new Date(start.getFullYear(), start.getMonth(), start.getDate() + d));
       if (!evOnDay(ev, key)) continue;
-      evTimes(ev).forEach(function (t) { if (list.length < 4) list.push(occAt(key, t)); });
+      evTimes(ev).forEach(function (t) { if (!list.length) list.push(occAt(key, t)); });
     }
     var h = '<div class="card"><div class="task-top"><div class="task-name"><b>' + esc(ev.name) + '</b><span>' +
       esc([evTimes(ev).join(', '), evFreqLabel(ev), ev.remindBefore >= 0 ? 'rappel ' + (ev.remindBefore ? ev.remindBefore + ' min avant' : 'à l’heure') : 'sans rappel'].join(' · ')) + '</span></div>' +
@@ -490,7 +490,7 @@
   }
   function sparkUpcoming(ev, now, end) {
     var rows = evAccounts(ev).map(function (a) { return { a: a, next: sparkState(ev, a).next || 0 }; })
-      .filter(function (r) { return r.next >= end; }).sort(function (x, y) { return x.next - y.next; });
+      .filter(function (r) { return r.next >= end; }).sort(function (x, y) { return x.next - y.next; }).slice(0, 1); // seulement la plus proche
     var h = '<div class="card"><div class="task-top"><div class="task-name"><b>' + esc(ev.name) + '</b><span>' +
       esc('Revient ' + SPARK_DAYS + ' j après avoir été faite' + (ev.remind ? ' · rappel quand elle revient' : '')) + '</span></div>' +
       '<button class="icon-btn ghost" data-act="go" data-to="evenement-' + ev.id + '" aria-label="Modifier ' + esc(ev.name) + '">' + ICON.edit + '</button></div>';
