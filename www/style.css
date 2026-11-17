@@ -257,3 +257,4 @@ input[type=time].input,input[type=date].input{color-scheme:dark}
 .lg-now{background:var(--muted)}
 .lg-add{background:repeating-linear-gradient(45deg,var(--muted) 0 3px,transparent 3px 7px);box-shadow:inset 0 0 0 1.5px var(--muted)}
 .lg-level{width:2px!important;height:14px!important;background:var(--text)}
+.strat-undo{border-top:1px solid var(--line);padding-top:10px}

@@ -1376,6 +1376,10 @@
       h += '</div><div class="strat-sep"></div>' +
         '<div class="row-between"><span>Points dépensés</span><b class="num">' + fmtNum(r.spent) + '</b></div>' +
         '<div class="row-between" style="color:var(--gold)"><span>Points restants</span><b class="num">' + fmtNum(r.left) + '</b></div>';
+      if (r.spent > 0) h += '<button class="btn primary" data-act="stratApply">Achats faits : mettre à jour mes stocks</button>';
+    }
+    if (ui.stratUndo && ui.stratUndo.acc === a.id) {
+      h += '<div class="row-between strat-undo"><span class="hint">Stocks mis à jour avec les achats.</span><button class="link-btn" data-act="stratUndo">Annuler</button></div>';
     }
     h += '</div>';
     h += stratChart(r, !!(st.gloire > 0));
@@ -1851,11 +1855,31 @@
     accDelCancel: function () { ui.confirmAcc = null; render(); },
     accDel: function (el) { deleteAccount(el.dataset.v); },
     resAdd: addResource,
-    stratUnit: function (el) { cycleStratUnit(el.dataset.k); },
-    stratAcc: function (el) { ui.stratAcc = el.dataset.v; render(); },
+    stratUnit: function (el) { ui.stratUndo = null; cycleStratUnit(el.dataset.k); },
+    stratAcc: function (el) { ui.stratAcc = el.dataset.v; ui.stratUndo = null; render(); },
     stratCfg: function () { ui.stratCfg = !ui.stratCfg; render(); },
     stratActive: function (el) { var c = stratCfgOf(el.dataset.v); if (c) { c.active = !c.active; save(); render(); } },
     stratReset: function () { data.strat.cfg = defaultStrat().cfg; save(); toast('Valeurs des packs remises par défaut'); render(); },
+    stratApply: function () {
+      var a = stratAccount();
+      if (!a) return;
+      var st = data.strat.acc[a.id] || {};
+      var r = stratCompute(data.strat.cfg, st);
+      if (!(r.spent > 0)) return;
+      ui.stratUndo = { acc: a.id, prev: JSON.parse(JSON.stringify(st)) };
+      // Les stocks prennent la valeur « stock final », et la Gloire ce qu'il reste après les achats.
+      r.rows.forEach(function (x) { if (x.packs > 0) st[x.c.id] = x.final; });
+      st.gloire = r.left;
+      data.strat.acc[a.id] = st;
+      save(); toast('Stocks mis à jour'); render();
+    },
+    stratUndo: function () {
+      var u = ui.stratUndo;
+      if (!u) return;
+      data.strat.acc[u.acc] = u.prev;
+      ui.stratUndo = null;
+      save(); toast('Mise à jour annulée'); render();
+    },
     stratClear: function () { var a = stratAccount(); if (a) { delete data.strat.acc[a.id]; save(); render(); } },
     resDelAsk: function (el) { ui.confirmRes = el.dataset.v; render(); },
     resDelCancel: function () { ui.confirmRes = null; render(); },
@@ -1902,7 +1926,7 @@
     if (f === 'remindTime' && el.value) { data.settings.remindTime = el.value; save(); }
     if (f === 'accName' || f === 'resName') render();
     if (f === 'res') applyResInput(el);
-    if (f === 'strat' || f === 'stratCfg') applyStratInput(el);
+    if (f === 'strat' || f === 'stratCfg') { ui.stratUndo = null; applyStratInput(el); }
     if (ui.evForm && f === 'evTime') { ui.evForm.times[+el.dataset.i] = el.value; render(); }
     if (ui.evForm && f === 'evAnchor') { ui.evForm.anchor = el.value; refreshEvSave(); }
     if (ui.evForm && f === 'sparkNext') { ui.evForm.spark[el.dataset.a] = { next: el.value ? new Date(el.value).getTime() || 0 : 0, prev: null, doneAt: null }; render(); }
