@@ -24,6 +24,8 @@
     spark: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg>',
     chev: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
     hist: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>',
+    cart: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h2l2.4 11h11l2-8H6.2"/><circle cx="9" cy="19.5" r="1.5"/><circle cx="17" cy="19.5" r="1.5"/></svg>',
+    sliders: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
     gear: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/><circle cx="9" cy="6" r="2" fill="#15171D"/><circle cx="15" cy="12" r="2" fill="#15171D"/><circle cx="7" cy="18" r="2" fill="#15171D"/></svg>'
   };
 
@@ -65,8 +67,15 @@
   function defaultData() {
     return { version: 1, accounts: [], tasks: [], progress: {}, history: {},
       resources: DEFAULT_RESOURCES.map(function (r) { return Object.assign({}, r); }), resLog: {}, events: [], raid: {},
-      settings: { remind: false, remindTime: '20:00' }, lastDay: null, welcomed: false };
+      settings: { remind: false, remindTime: '20:00' }, strat: defaultStrat(), lastDay: null, welcomed: false };
   }
+  // Stratégie d'achat : packs achetables avec les Points de Gloire (repris du tableur « Stratégie d'achat »).
+  var STRAT_DEFAULT = [
+    { id: 'viande', name: 'Viande', color: '#F87171', unit: 1, qty: 50000, cost: 160, active: true },
+    { id: 'bois', name: 'Bois', color: '#FB923C', unit: 1, qty: 50000, cost: 160, active: true },
+    { id: 'pierre', name: 'Pierre', color: '#9AA0AE', unit: 16, qty: 8000, cost: 160, active: true },
+    { id: 'or', name: 'Or', color: '#FBBF24', unit: 24, qty: 2000, cost: 160, active: true }];
+  function defaultStrat() { return { cfg: STRAT_DEFAULT.map(function (r) { return Object.assign({}, r); }), acc: {} }; }
   function normalize(d) {
     var base = defaultData();
     var out = Object.assign(base, d || {});
@@ -84,6 +93,9 @@
       if (ev.kind === 'spark' && !ev.spark) ev.spark = {};
     });
     if (!out.raid || typeof out.raid !== 'object') out.raid = {};
+    if (!out.strat || typeof out.strat !== 'object') out.strat = defaultStrat();
+    if (!Array.isArray(out.strat.cfg) || !out.strat.cfg.length) out.strat.cfg = defaultStrat().cfg;
+    if (!out.strat.acc || typeof out.strat.acc !== 'object') out.strat.acc = {};
     delete out.autoRaid; // ancien format (raid auto permanent), remplacé par un raid auto par passage
     return out;
   }
@@ -219,6 +231,7 @@
     if (r === 'reglages') html = viewSettings();
     else if (r === 'historique') html = viewHistory();
     else if (r === 'ressources') html = viewResources();
+    else if (r === 'achats') html = viewStrat();
     else if (r === 'evenements') html = viewEvents();
     else if (r.indexOf('evenement-') === 0) html = viewEventForm(r.slice(10));
     else if (r === 'importer') html = viewImport();
@@ -247,7 +260,7 @@
     function b(to, icon, label) {
       return '<button data-act="go" data-to="' + to + '" class="' + (active === to ? 'on' : '') + '">' + icon + label + '</button>';
     }
-    return '<nav class="nav">' + b('', ICON.tasks, 'Tâches') + b('evenements', ICON.cal, 'Événements') + b('ressources', ICON.gem, 'Ressources') + b('historique', ICON.hist, 'Historique') + b('reglages', ICON.gear, 'Réglages') + '</nav>';
+    return '<nav class="nav">' + b('', ICON.tasks, 'Tâches') + b('evenements', ICON.cal, 'Événements') + b('ressources', ICON.gem, 'Ressources') + b('achats', ICON.cart, 'Achats') + b('historique', ICON.hist, 'Historique') + b('reglages', ICON.gear, 'Réglages') + '</nav>';
   }
   function headBack(kicker, title, to) {
     return '<div class="head row"><button class="icon-btn" data-act="go" data-to="' + (to || '') + '" aria-label="Retour">' + ICON.back + '</button>' +
@@ -1216,6 +1229,171 @@
       if (e2 && e2.tagName === 'INPUT') e2.focus();
     }, 0);
   }
+  /* ---------- écran : stratégie d'achat (Points de Gloire) ---------- */
+  function stratCfgOf(id) { return data.strat.cfg.filter(function (c) { return c.id === id; })[0]; }
+  function stratAccount() {
+    var a = findAcc(ui.stratAcc);
+    if (!a) { a = data.accounts[0]; ui.stratAcc = a ? a.id : null; }
+    return a;
+  }
+  // « 11.8B », « 11,8 Md », « 78.4M », « 500k » ou un nombre complet.
+  function parseAmount(str) {
+    var raw = String(str).replace(/[\s  ]/g, '').replace(',', '.').toLowerCase();
+    if (raw === '') return 0;
+    var m = raw.match(/^(\d+(?:\.\d+)?)(k|m|md|b|g|t)?$/);
+    if (!m) {
+      // nombre complet écrit avec des points de milliers (11.800.000.000)
+      if (/^\d{1,3}(\.\d{3})+$/.test(raw)) return +raw.replace(/\./g, '');
+      return null;
+    }
+    var mult = { k: 1e3, m: 1e6, md: 1e9, b: 1e9, g: 1e9, t: 1e12 }[m[2]] || 1;
+    return Math.round(parseFloat(m[1]) * mult * 1000) / 1000;
+  }
+  // Écriture courte façon jeu (11.8B, 78.4M) quand elle est exacte, sinon le nombre complet.
+  function fmtAmount(n) {
+    if (!n) return '';
+    if (n < 1000) return String(n);
+    var units = [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
+    for (var i = 0; i < units.length; i++) {
+      var v = n / units[i][0];
+      if (v >= 1 && Math.abs(Math.round(v * 1000) / 1000 - v) < 1e-9) return String(Math.round(v * 1000) / 1000) + units[i][1];
+    }
+    return fmtNum(n);
+  }
+  // Valeur arrondie pour l'affichage d'un résultat (25.72B).
+  function fmtShort(n) {
+    var units = [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
+    for (var i = 0; i < units.length; i++) {
+      if (n >= units[i][0]) { var v = n / units[i][0]; return String(Math.round(v * (v < 100 ? 100 : 10)) / (v < 100 ? 100 : 10)) + units[i][1]; }
+    }
+    return fmtNum(n);
+  }
+  /* Même calcul que le tableur : on « remplit » les ressources les plus basses (en valeur équivalente =
+     stock × valeur unitaire) jusqu'à un niveau commun, avec tous les points disponibles. On arrondit au
+     pack inférieur, puis le reliquat offre un pack de plus aux ressources les plus basses tant qu'il suffit. */
+  function stratCompute(cfg, st) {
+    var rows = cfg.map(function (c, i) {
+      var stock = Math.max(0, +st[c.id] || 0);
+      var unit = Math.max(0, +c.unit || 0), qty = Math.max(0, +c.qty || 0), cost = Math.max(0, +c.cost || 0);
+      return { c: c, i: i, stock: stock, L: stock * unit, S: unit * qty, R: cost, ok: !!c.active && unit > 0 && qty > 0 && cost > 0, packs: 0 };
+    });
+    var act = rows.filter(function (r) { return r.ok; });
+    var P = Math.max(0, +st.gloire || 0);
+    var spent = 0;
+    if (act.length) {
+      var sorted = act.slice().sort(function (a, b) { return a.L - b.L || a.i - b.i; });
+      var sf = 0, slf = 0, T = 0;
+      for (var k = 0; k < sorted.length; k++) {
+        var f = sorted[k].R / sorted[k].S;
+        sf += f; slf += sorted[k].L * f;
+        var t = (P + slf) / sf;
+        if (k === sorted.length - 1 || t <= sorted[k + 1].L) { T = t; break; }
+      }
+      act.forEach(function (r) {
+        var h = Math.max(0, (T - r.L) * r.R / r.S);
+        r.packs = Math.floor(h / r.R + 1e-6);
+        spent += r.packs * r.R;
+      });
+      var rest = P - spent, cum = 0;
+      act.slice().sort(function (a, b) { return (a.L + a.packs * a.S) - (b.L + b.packs * b.S) || a.i - b.i; })
+        .forEach(function (r) { cum += r.R; if (cum <= rest) { r.packs++; spent += r.R; } });
+    }
+    rows.forEach(function (r) { r.final = r.stock + r.packs * (+r.c.qty || 0); r.pts = r.packs * r.R; });
+    return { rows: rows, spent: spent, left: P - spent, any: act.length > 0 };
+  }
+  function viewStrat() {
+    var h = '<div class="screen"><div class="head"><div style="display:flex;flex-direction:column;gap:2px;min-width:0"><span class="kicker">Points de Gloire</span>' +
+      '<h1>Stratégie d’achat</h1></div>' +
+      '<button class="icon-btn' + (ui.stratCfg ? ' on' : '') + '" data-act="stratCfg" aria-pressed="' + !!ui.stratCfg + '" aria-label="Réglages des packs">' + ICON.sliders + '</button></div><div class="scroll">';
+    if (ui.stratCfg) h += stratCfgCard();
+    var a = stratAccount();
+    if (!a) {
+      h += '<div class="empty">Ajoute d’abord tes comptes.<button class="btn primary sm" style="width:auto;padding:0 16px" data-act="go" data-to="reglages">Aller aux réglages</button></div>';
+      return h + '</div>' + nav('achats') + '</div>';
+    }
+    if (data.accounts.length > 1) {
+      h += '<div class="chips scope-chips" role="group" aria-label="Compte">' + data.accounts.map(function (x) {
+        var on = x.id === a.id;
+        return '<button class="scope' + (on ? ' on' : '') + '" data-act="stratAcc" data-v="' + x.id + '" aria-pressed="' + on + '"><span class="av" style="width:24px;height:24px;font-size:10px;border-radius:6px;background:' + x.color + '">' + esc(initials(x.name)) + '</span>' + esc(x.name) + '</button>';
+      }).join('') + '</div>';
+    }
+    var st = data.strat.acc[a.id] || {};
+    function inp(id, label, cls) {
+      var fid = 'st-' + id;
+      return '<div class="field' + (cls ? ' ' + cls : '') + '" style="gap:4px"><label class="res-name" for="' + fid + '">' + label + '</label>' +
+        '<input id="' + fid + '" class="input res-input" inputmode="decimal" enterkeyhint="done" autocomplete="off" placeholder="ex. 11.8B" data-field="strat" data-k="' + id + '" value="' + esc(fmtAmount(st[id] || 0)) + '"></div>';
+    }
+    h += '<div class="card"><div class="row-between"><span class="label">Ce que tu as</span>' +
+      (data.strat.acc[a.id] ? '<button class="link-btn" data-act="stratClear">Effacer</button>' : '') + '</div><div class="res-grid">';
+    data.strat.cfg.forEach(function (c) {
+      h += inp(c.id, '<span class="res-dot" style="background:' + c.color + '"></span>' + esc(c.name) + (c.active ? '' : ' <span class="muted" style="font-weight:600">(ignoré)</span>'));
+    });
+    h += '</div>' + inp('gloire', '<span class="res-dot" style="background:var(--gold)"></span>Points de Gloire', 'gloire') +
+      '<span class="hint">Écris comme dans le jeu : 11.8B, 78.4M, 500K… ou le nombre complet.</span></div>';
+
+    var r = stratCompute(data.strat.cfg, st);
+    h += '<div class="card strat-res"><div class="row-between"><span class="label" style="color:var(--gold)">À acheter</span><span class="hint">' + esc(packCostLabel()) + '</span></div>';
+    if (!r.any) {
+      h += '<span class="hint">Aucune ressource active. Active-en au moins une dans les réglages des packs.</span>';
+    } else if (!(st.gloire > 0)) {
+      h += '<span class="hint">Indique tes Points de Gloire pour voir quoi acheter.</span>';
+    } else {
+      h += '<div class="strat-grid"><span class="strat-th">Ressource</span><span class="strat-th num">Packs</span><span class="strat-th num">Stock final</span>';
+      r.rows.forEach(function (x) {
+        var off = !x.packs;
+        h += '<span class="strat-name' + (off ? ' off' : '') + '"><span class="res-dot" style="background:' + x.c.color + '"></span>' + esc(x.c.name) + '</span>' +
+          '<b class="strat-packs num' + (off ? ' off' : '') + '">' + fmtNum(x.packs) + '</b>' +
+          '<span class="num' + (off ? ' off' : '') + '">' + (x.c.active ? fmtShort(x.final) : '—') + '</span>';
+      });
+      h += '</div><div class="strat-sep"></div>' +
+        '<div class="row-between"><span>Points dépensés</span><b class="num">' + fmtNum(r.spent) + '</b></div>' +
+        '<div class="row-between" style="color:var(--gold)"><span>Points restants</span><b class="num">' + fmtNum(r.left) + '</b></div>';
+    }
+    h += '</div></div>' + nav('achats') + '</div>';
+    return h;
+  }
+  function packCostLabel() {
+    var costs = data.strat.cfg.filter(function (c) { return c.active; }).map(function (c) { return +c.cost; });
+    var same = costs.length && costs.every(function (c) { return c === costs[0]; });
+    return same ? 'pack = ' + fmtNum(costs[0]) + ' pts' : '';
+  }
+  function stratCfgCard() {
+    var h = '<div class="card"><div class="row-between"><span class="label">Réglages des packs</span><button class="link-btn" data-act="stratReset">Valeurs par défaut</button></div>' +
+      '<span class="hint">Valeur : combien vaut 1 unité par rapport à la Viande (Pierre ×16, Or ×24). Une ressource désactivée est ignorée dans le calcul.</span>';
+    data.strat.cfg.forEach(function (c) {
+      function f(k, label) {
+        var fid = 'sc-' + c.id + '-' + k;
+        return '<div class="field" style="gap:4px;min-width:0"><label class="hint" style="font-size:12px" for="' + fid + '">' + label + '</label>' +
+          '<input id="' + fid + '" class="input" style="height:44px;padding:0 10px;font-weight:700" inputmode="decimal" enterkeyhint="done" autocomplete="off" data-field="stratCfg" data-r="' + c.id + '" data-k="' + k + '" value="' + esc(fmtAmount(c[k])) + '"></div>';
+      }
+      h += '<div class="strat-cfg' + (c.active ? '' : ' off') + '"><div class="row-between"><b class="strat-name"><span class="res-dot" style="background:' + c.color + '"></span>' + esc(c.name) + '</b>' +
+        '<button class="switch' + (c.active ? ' on' : '') + '" role="switch" aria-checked="' + !!c.active + '" aria-label="Prendre en compte ' + esc(c.name) + '" data-act="stratActive" data-v="' + c.id + '"><i></i></button></div>' +
+        '<div class="strat-cfg-grid">' + f('unit', 'Valeur') + f('qty', 'Qté / pack') + f('cost', 'Coût (pts)') + '</div></div>';
+    });
+    return h + '</div>';
+  }
+  function applyStratInput(el) {
+    var v = parseAmount(el.value);
+    if (v === null) { toast('Nombre non reconnu'); render(); return; }
+    if (el.dataset.field === 'stratCfg') {
+      var c = stratCfgOf(el.dataset.r);
+      if (!c) return;
+      if (!(v > 0)) { toast('Mets un nombre plus grand que 0'); render(); return; }
+      c[el.dataset.k] = v;
+    } else {
+      var a = stratAccount();
+      if (!a) return;
+      var st = data.strat.acc[a.id] || (data.strat.acc[a.id] = {});
+      st[el.dataset.k] = Math.round(v);
+    }
+    save();
+    setTimeout(function () {
+      var next = document.activeElement && document.activeElement.id;
+      render();
+      var e2 = next && document.getElementById(next);
+      if (e2 && e2.tagName === 'INPUT') e2.focus();
+    }, 0);
+  }
   function addResource() {
     var name = (ui.resDraft || '').trim();
     if (!name) return;
@@ -1250,6 +1428,7 @@
     Object.keys(data.raid).forEach(function (k) { if (k.split('|')[2] === id) delete data.raid[k]; });
     Object.keys(data.progress).forEach(function (k) { if (k.split('|')[2] === id) delete data.progress[k]; });
     Object.keys(data.resLog).forEach(function (k) { if (k.split('|')[0] === id) delete data.resLog[k]; });
+    delete data.strat.acc[id];
     ui.editAcc = null; ui.confirmAcc = null;
     save(); toast('Compte supprimé'); render();
   }
@@ -1588,6 +1767,11 @@
     accDelCancel: function () { ui.confirmAcc = null; render(); },
     accDel: function (el) { deleteAccount(el.dataset.v); },
     resAdd: addResource,
+    stratAcc: function (el) { ui.stratAcc = el.dataset.v; render(); },
+    stratCfg: function () { ui.stratCfg = !ui.stratCfg; render(); },
+    stratActive: function (el) { var c = stratCfgOf(el.dataset.v); if (c) { c.active = !c.active; save(); render(); } },
+    stratReset: function () { data.strat.cfg = defaultStrat().cfg; save(); toast('Valeurs des packs remises par défaut'); render(); },
+    stratClear: function () { var a = stratAccount(); if (a) { delete data.strat.acc[a.id]; save(); render(); } },
     resDelAsk: function (el) { ui.confirmRes = el.dataset.v; render(); },
     resDelCancel: function () { ui.confirmRes = null; render(); },
     resDel: function (el) { deleteResource(el.dataset.v); },
@@ -1633,6 +1817,7 @@
     if (f === 'remindTime' && el.value) { data.settings.remindTime = el.value; save(); }
     if (f === 'accName' || f === 'resName') render();
     if (f === 'res') applyResInput(el);
+    if (f === 'strat' || f === 'stratCfg') applyStratInput(el);
     if (ui.evForm && f === 'evTime') { ui.evForm.times[+el.dataset.i] = el.value; render(); }
     if (ui.evForm && f === 'evAnchor') { ui.evForm.anchor = el.value; refreshEvSave(); }
     if (ui.evForm && f === 'sparkNext') { ui.evForm.spark[el.dataset.a] = { next: el.value ? new Date(el.value).getTime() || 0 : 0, prev: null, doneAt: null }; render(); }
@@ -1649,7 +1834,7 @@
     if (e.key !== 'Enter') return;
     if (fld === 'draft') { e.preventDefault(); addAccount(); }
     else if (fld === 'resDraft') { e.preventDefault(); addResource(); }
-    else if (fld === 'res' || fld === 'cnt' || fld === 'reps') { e.preventDefault(); e.target.blur(); }
+    else if (fld === 'res' || fld === 'cnt' || fld === 'reps' || fld === 'strat' || fld === 'stratCfg') { e.preventDefault(); e.target.blur(); }
   });
   // Appui ou glissé sur le graphique : affiche la valeur du jour touché ; relâcher remet la dernière valeur.
   var chartDrag = false;

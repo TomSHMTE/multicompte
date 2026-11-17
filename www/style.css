@@ -211,3 +211,24 @@ input[type=time].input,input[type=date].input{color-scheme:dark}
 .spark-row{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 10px;flex-wrap:wrap}
 .spark-row .grow{flex:1;min-width:80px}
 .spark-row .input{height:44px;width:auto;flex:1 1 190px;font-size:14px;padding:0 10px}
+
+/* Stratégie d'achat */
+:root{--gold:#FBBF24}
+.nav{grid-template-columns:repeat(6,minmax(0,1fr));padding-left:4px;padding-right:4px}
+.nav button{font-size:10px;letter-spacing:-.01em}
+.icon-btn.on{background:var(--track);border-color:var(--text)}
+.num{font-variant-numeric:tabular-nums;text-align:right}
+.field.gloire .input{border-color:#8A6A12;background:#1F1A0C;color:var(--gold)}
+.field.gloire .input:focus{border-color:var(--gold)}
+.strat-res{background:#0B0D11;border-color:#3A2F10;gap:12px}
+.strat-grid{display:grid;grid-template-columns:minmax(0,1fr) auto auto;column-gap:16px;row-gap:10px;align-items:baseline;font-size:14px}
+.strat-th{font-size:11px;color:var(--muted);font-weight:600}
+.strat-name{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;min-width:0}
+.strat-packs{font-size:22px}
+.strat-grid .off{color:var(--placeholder);font-weight:600}
+.strat-sep{height:1px;background:var(--line)}
+.strat-res .row-between{font-size:15px}
+.strat-cfg{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:8px}
+.strat-cfg.off .strat-cfg-grid{opacity:.45}
+.strat-cfg-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.scroll > .chips{flex:none}
