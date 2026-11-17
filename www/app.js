@@ -71,10 +71,11 @@
   }
   // Stratégie d'achat : packs achetables avec les Points de Gloire (repris du tableur « Stratégie d'achat »).
   var STRAT_DEFAULT = [
-    { id: 'viande', name: 'Viande', color: '#F87171', unit: 1, qty: 50000, cost: 160, active: true },
-    { id: 'bois', name: 'Bois', color: '#FB923C', unit: 1, qty: 50000, cost: 160, active: true },
-    { id: 'pierre', name: 'Pierre', color: '#9AA0AE', unit: 16, qty: 8000, cost: 160, active: true },
-    { id: 'or', name: 'Or', color: '#FBBF24', unit: 24, qty: 2000, cost: 160, active: true }];
+    { id: 'viande', name: 'Viande', color: '#d95926', unit: 1, qty: 50000, cost: 160, active: true },
+    { id: 'bois', name: 'Bois', color: '#199e70', unit: 1, qty: 50000, cost: 160, active: true },
+    { id: 'pierre', name: 'Pierre', color: '#3987e5', unit: 16, qty: 8000, cost: 160, active: true },
+    { id: 'or', name: 'Or', color: '#c98500', unit: 24, qty: 2000, cost: 160, active: true }];
+  function stratColor(id) { for (var i = 0; i < STRAT_DEFAULT.length; i++) if (STRAT_DEFAULT[i].id === id) return STRAT_DEFAULT[i].color; return '#9AA0AE'; }
   function defaultStrat() { return { cfg: STRAT_DEFAULT.map(function (r) { return Object.assign({}, r); }), acc: {} }; }
   function normalize(d) {
     var base = defaultData();
@@ -1353,7 +1354,7 @@
     h += '<div class="card"><div class="row-between"><span class="label">Ce que tu as</span>' +
       (data.strat.acc[a.id] ? '<button class="link-btn" data-act="stratClear">Effacer</button>' : '') + '</div><div class="res-grid">';
     data.strat.cfg.forEach(function (c) {
-      h += inp(c.id, '<span class="res-dot" style="background:' + c.color + '"></span>' + esc(c.name) + (c.active ? '' : ' <span class="muted" style="font-weight:600">(ignoré)</span>'));
+      h += inp(c.id, '<span class="res-dot" style="background:' + stratColor(c.id) + '"></span>' + esc(c.name) + (c.active ? '' : ' <span class="muted" style="font-weight:600">(ignoré)</span>'));
     });
     h += '</div>' + inp('gloire', '<span class="res-dot" style="background:var(--gold)"></span>Points de Gloire', 'gloire') +
       '<span class="hint">Tape juste le chiffre (55,9) et touche le bouton à droite pour choisir l’unité : B (milliards), M (millions), K (milliers).</span></div>';
@@ -1368,7 +1369,7 @@
       h += '<div class="strat-grid"><span class="strat-th">Ressource</span><span class="strat-th num">Packs</span><span class="strat-th num">Stock final</span>';
       r.rows.forEach(function (x) {
         var off = !x.packs;
-        h += '<span class="strat-name' + (off ? ' off' : '') + '"><span class="res-dot" style="background:' + x.c.color + '"></span>' + esc(x.c.name) + '</span>' +
+        h += '<span class="strat-name' + (off ? ' off' : '') + '"><span class="res-dot" style="background:' + stratColor(x.c.id) + '"></span>' + esc(x.c.name) + '</span>' +
           '<b class="strat-packs num' + (off ? ' off' : '') + '">' + fmtNum(x.packs) + '</b>' +
           '<span class="num' + (off ? ' off' : '') + '">' + (x.c.active ? fmtShort(x.final) : '—') + '</span>';
       });
@@ -1376,7 +1377,57 @@
         '<div class="row-between"><span>Points dépensés</span><b class="num">' + fmtNum(r.spent) + '</b></div>' +
         '<div class="row-between" style="color:var(--gold)"><span>Points restants</span><b class="num">' + fmtNum(r.left) + '</b></div>';
     }
-    h += '</div></div>' + nav('achats') + '</div>';
+    h += '</div>';
+    h += stratChart(r, !!(st.gloire > 0));
+    h += '</div>' + nav('achats') + '</div>';
+    return h;
+  }
+  function fmtRatio(x) { return '×' + (Math.round(x * 100) / 100).toString().replace('.', ','); }
+  /* Graphique d'équilibre : une barre par ressource en valeur équivalente (stock × valeur unitaire).
+     Partie pleine = ce que tu as ; partie hachurée = ce que les achats ajoutent ; trait = niveau commun visé. */
+  function stratChart(r, withBuy) {
+    var act = r.rows.filter(function (x) { return x.ok; });
+    if (!act.some(function (x) { return x.L > 0; })) return '';
+    act.forEach(function (x) { x.after = x.L + (withBuy ? x.packs * x.S : 0); });
+    var max = Math.max.apply(null, r.rows.map(function (x) { return Math.max(x.L, x.after || 0); })) || 1;
+    var avgB = act.reduce(function (t, x) { return t + x.L; }, 0) / act.length;
+    var avgA = act.reduce(function (t, x) { return t + x.after; }, 0) / act.length;
+    function spread(key) {
+      var vals = act.map(function (x) { return x[key]; }), lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+      var loR = act.filter(function (x) { return x[key] === lo; })[0], hiR = act.filter(function (x) { return x[key] === hi; })[0];
+      return { ratio: lo > 0 ? hi / lo : null, lo: loR, hi: hiR };
+    }
+    var sb = spread('L'), sa = spread('after');
+    var bought = withBuy && act.some(function (x) { return x.packs > 0; });
+    // Niveau commun après achat : la plus basse des ressources renflouées.
+    var level = bought ? Math.min.apply(null, act.filter(function (x) { return x.packs > 0; }).map(function (x) { return x.after; })) : null;
+    var h = '<div class="card strat-chart"><div class="row-between"><span class="label">Équilibre des ressources</span>' +
+      '<span class="hint">' + (bought ? 'avant → après achat' : 'actuel') + '</span></div>';
+    var sum = sb.ratio === null ? 'Il te manque au moins une ressource : ' + esc(sb.lo.c.name) + ' est à 0.'
+      : sb.ratio < 1.05 ? 'Tes ressources sont déjà équilibrées.'
+      : esc(sb.hi.c.name) + ' : <b>' + fmtRatio(sb.ratio) + '</b> par rapport à ' + esc(sb.lo.c.name) + ' (ta plus basse).';
+    if (bought && sa.ratio !== null) sum += '<br>Après achat : écart ramené à <b>' + fmtRatio(sa.ratio) + '</b>' +
+      (sa.ratio > 1.05 ? ' (' + esc(sa.hi.c.name) + ' reste au-dessus, rien à y ajouter)' : '') + '.';
+    h += '<p class="strat-sum">' + sum + '</p><div class="bars" role="list">';
+    r.rows.forEach(function (x) {
+      var col = stratColor(x.c.id);
+      var wB = x.L / max * 100, wA = x.ok ? (x.after - x.L) / max * 100 : 0;
+      var right = !x.ok ? 'ignoré' : (bought && x.packs ? fmtShort(x.stock) + ' → <b>' + fmtShort(x.final) + '</b>' : '<b>' + fmtShort(x.stock) + '</b>');
+      var ratio = x.ok && avgB > 0 ? fmtRatio(x.L / avgB) + (bought ? ' → ' + fmtRatio(x.after / avgA) : '') : '';
+      var desc = x.c.name + ' : ' + (x.ok ? fmtShort(x.stock) + (bought && x.packs ? ', ' + fmtShort(x.final) + ' après achat' : '') + ', ' + ratio.replace(/×/g, 'fois ') + ' la moyenne' : 'ignoré');
+      h += '<div class="bar-row' + (x.ok ? '' : ' off') + '" role="listitem" aria-label="' + esc(desc) + '">' +
+        '<div class="bar-top"><span class="strat-name"><span class="res-dot" style="background:' + col + '"></span>' + esc(x.c.name) +
+        (x.ok && +x.c.unit !== 1 ? '<span class="muted bar-unit">×' + esc(String(x.c.unit).replace('.', ',')) + '</span>' : '') + '</span>' +
+        '<span class="bar-val">' + right + '</span></div>' +
+        '<div class="bar-track" aria-hidden="true">' +
+        (wB > 0 ? '<i class="bar-now" style="width:' + wB.toFixed(2) + '%;background:' + col + '"></i>' : '') +
+        (wA > 0.05 ? '<i class="bar-add" style="width:' + wA.toFixed(2) + '%;--c:' + col + '"></i>' : '') +
+        (level !== null ? '<span class="bar-level" style="left:' + (level / max * 100).toFixed(2) + '%"></span>' : '') +
+        '</div>' + (ratio ? '<span class="bar-ratio">' + ratio + ' la moyenne</span>' : '') + '</div>';
+    });
+    h += '</div><div class="bar-legend" aria-hidden="true"><span><i class="lg-now"></i>Actuel</span>' +
+      (bought ? '<span><i class="lg-add"></i>Ajouté par les achats</span><span><i class="lg-level"></i>Niveau commun</span>' : '') + '</div>' +
+      '<span class="hint">Barres en valeur équivalente (Pierre ×16, Or ×24) pour comparer ce qui est comparable.' + (withBuy ? '' : ' Ajoute tes Points de Gloire pour voir l’effet des achats.') + '</span></div>';
     return h;
   }
   function packCostLabel() {
@@ -1393,7 +1444,7 @@
         return '<div class="field" style="gap:4px;min-width:0"><label class="hint" style="font-size:12px" for="' + fid + '">' + label + '</label>' +
           '<input id="' + fid + '" class="input" style="height:44px;padding:0 10px;font-weight:700" inputmode="decimal" enterkeyhint="done" autocomplete="off" data-field="stratCfg" data-r="' + c.id + '" data-k="' + k + '" value="' + esc(fmtAmount(c[k])) + '"></div>';
       }
-      h += '<div class="strat-cfg' + (c.active ? '' : ' off') + '"><div class="row-between"><b class="strat-name"><span class="res-dot" style="background:' + c.color + '"></span>' + esc(c.name) + '</b>' +
+      h += '<div class="strat-cfg' + (c.active ? '' : ' off') + '"><div class="row-between"><b class="strat-name"><span class="res-dot" style="background:' + stratColor(c.id) + '"></span>' + esc(c.name) + '</b>' +
         '<button class="switch' + (c.active ? ' on' : '') + '" role="switch" aria-checked="' + !!c.active + '" aria-label="Prendre en compte ' + esc(c.name) + '" data-act="stratActive" data-v="' + c.id + '"><i></i></button></div>' +
         '<div class="strat-cfg-grid">' + f('unit', 'Valeur') + f('qty', 'Qté / pack') + f('cost', 'Coût (pts)') + '</div></div>';
     });
@@ -1415,7 +1466,8 @@
       st.u = st.u || {};
       if (suf) st.u[k] = { k: 'K', m: 'M', md: 'B', b: 'B', g: 'B', t: 'T' }[suf[1]];
       // Sans lettre, le chiffre tapé est pris dans l'unité affichée sur le bouton.
-      else if (!/^\d{1,3}([\s\u00a0\u202f.]\d{3})+$/.test(String(el.value).trim())) v = v * UNIT_MULT[stratUnit(st, k)];
+      // Un nombre complet (11 800 000 000 ou 11800000000) est pris tel quel.
+      else if (v < 100000 && !/^\d{1,3}([\s\u00a0\u202f.]\d{3})+$/.test(String(el.value).trim())) v = v * UNIT_MULT[stratUnit(st, k)];
       st[k] = Math.round(v);
     }
     save();
