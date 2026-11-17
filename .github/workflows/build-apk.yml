@@ -72,9 +72,13 @@ jobs:
 
       - name: Récupérer l'APK
         run: |
-          APK=$(find android/app/build/outputs/apk/release -name "*.apk" | grep -i signed | head -n1)
-          if [ -z "$APK" ]; then APK=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n1); fi
+          # Attention : « unsigned » contient aussi « signed », on exclut donc explicitement l'APK non signé.
+          APK=$(find android/app/build/outputs/apk/release -name "*.apk" ! -name "*unsigned*" | head -n1)
           echo "APK trouvé : $APK"
+          test -n "$APK"
+          # Refuse de publier un APK non signé ou signé avec une autre clé (sinon la mise à jour échoue sur le téléphone).
+          apksigner verify --print-certs "$APK" | tee certs.txt
+          grep -q "CN=" certs.txt
           cp "$APK" multicompte.apk
 
       - name: Publier le lien de téléchargement
