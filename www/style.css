@@ -232,3 +232,8 @@ input[type=time].input,input[type=date].input{color-scheme:dark}
 .strat-cfg.off .strat-cfg-grid{opacity:.45}
 .strat-cfg-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .scroll > .chips{flex:none}
+.unit-wrap{position:relative;display:flex}
+.unit-wrap .res-input{padding-right:52px}
+.unit-btn{position:absolute;right:4px;top:4px;bottom:4px;width:44px;border-radius:8px;border:0;background:var(--track);color:var(--text);font-size:16px;font-weight:700}
+.unit-btn.none{color:var(--muted)}
+.field.gloire .unit-btn{background:#3A2F10;color:var(--gold)}

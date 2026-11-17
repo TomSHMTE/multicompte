@@ -1301,6 +1301,31 @@
     rows.forEach(function (r) { r.final = r.stock + r.packs * (+r.c.qty || 0); r.pts = r.packs * r.R; });
     return { rows: rows, spent: spent, left: P - spent, any: act.length > 0 };
   }
+  var UNIT_MULT = { '': 1, K: 1e3, M: 1e6, B: 1e9, T: 1e12 };
+  var UNIT_NAME = { '': 'aucune', K: 'milliers', M: 'millions', B: 'milliards', T: 'billions' };
+  var UNIT_CYCLE = ['B', 'M', 'K', ''];
+  // Unité affichée pour un champ : celle choisie par l'utilisateur, sinon B pour les ressources et M pour la Gloire.
+  function stratUnit(st, k) {
+    var u = st && st.u && st.u[k];
+    if (typeof u === 'string' && u in UNIT_MULT) return u;
+    var v = st && st[k];
+    if (v > 0) return v >= 1e9 ? 'B' : v >= 1e6 ? 'M' : v >= 1e3 ? 'K' : '';
+    return k === 'gloire' ? 'M' : 'B';
+  }
+  function cycleStratUnit(k) {
+    var a = stratAccount();
+    if (!a) return;
+    var st = data.strat.acc[a.id] || (data.strat.acc[a.id] = {});
+    var cur = stratUnit(st, k), next = UNIT_CYCLE[(UNIT_CYCLE.indexOf(cur) + 1) % UNIT_CYCLE.length];
+    var inputEl = document.getElementById('st-' + k);
+    // Garde le chiffre tapé (55,9) et change seulement l'unité : 55,9B devient 55,9M.
+    var typed = inputEl ? parseAmount(inputEl.value) : null;
+    var mant = typed !== null && inputEl.value.trim() !== '' && !/[a-z]/i.test(inputEl.value) ? typed : (st[k] || 0) / UNIT_MULT[cur];
+    st.u = st.u || {};
+    st.u[k] = next;
+    if (mant) st[k] = Math.round(mant * UNIT_MULT[next]);
+    save(); render();
+  }
   function viewStrat() {
     var h = '<div class="screen"><div class="head"><div style="display:flex;flex-direction:column;gap:2px;min-width:0"><span class="kicker">Points de Gloire</span>' +
       '<h1>Stratégie d’achat</h1></div>' +
@@ -1319,9 +1344,11 @@
     }
     var st = data.strat.acc[a.id] || {};
     function inp(id, label, cls) {
-      var fid = 'st-' + id;
+      var fid = 'st-' + id, u = stratUnit(st, id), val = st[id] || 0;
+      var shown = val ? String(Math.round(val / UNIT_MULT[u] * 10000) / 10000).replace('.', ',') : '';
       return '<div class="field' + (cls ? ' ' + cls : '') + '" style="gap:4px"><label class="res-name" for="' + fid + '">' + label + '</label>' +
-        '<input id="' + fid + '" class="input res-input" inputmode="decimal" enterkeyhint="done" autocomplete="off" placeholder="ex. 11.8B" data-field="strat" data-k="' + id + '" value="' + esc(fmtAmount(st[id] || 0)) + '"></div>';
+        '<div class="unit-wrap"><input id="' + fid + '" class="input res-input" inputmode="decimal" enterkeyhint="done" autocomplete="off" placeholder="0" data-field="strat" data-k="' + id + '" value="' + esc(shown) + '">' +
+        '<button class="unit-btn' + (u ? '' : ' none') + '" data-act="stratUnit" data-k="' + id + '" aria-label="Unité : ' + (UNIT_NAME[u]) + '. Toucher pour changer">' + (u || '—') + '</button></div></div>';
     }
     h += '<div class="card"><div class="row-between"><span class="label">Ce que tu as</span>' +
       (data.strat.acc[a.id] ? '<button class="link-btn" data-act="stratClear">Effacer</button>' : '') + '</div><div class="res-grid">';
@@ -1329,7 +1356,7 @@
       h += inp(c.id, '<span class="res-dot" style="background:' + c.color + '"></span>' + esc(c.name) + (c.active ? '' : ' <span class="muted" style="font-weight:600">(ignoré)</span>'));
     });
     h += '</div>' + inp('gloire', '<span class="res-dot" style="background:var(--gold)"></span>Points de Gloire', 'gloire') +
-      '<span class="hint">Écris comme dans le jeu : 11.8B, 78.4M, 500K… ou le nombre complet.</span></div>';
+      '<span class="hint">Tape juste le chiffre (55,9) et touche le bouton à droite pour choisir l’unité : B (milliards), M (millions), K (milliers).</span></div>';
 
     var r = stratCompute(data.strat.cfg, st);
     h += '<div class="card strat-res"><div class="row-between"><span class="label" style="color:var(--gold)">À acheter</span><span class="hint">' + esc(packCostLabel()) + '</span></div>';
@@ -1383,8 +1410,13 @@
     } else {
       var a = stratAccount();
       if (!a) return;
-      var st = data.strat.acc[a.id] || (data.strat.acc[a.id] = {});
-      st[el.dataset.k] = Math.round(v);
+      var st = data.strat.acc[a.id] || (data.strat.acc[a.id] = {}), k = el.dataset.k;
+      var suf = String(el.value).replace(/[\s\u00a0\u202f]/g, '').toLowerCase().match(/(k|md|m|b|g|t)$/);
+      st.u = st.u || {};
+      if (suf) st.u[k] = { k: 'K', m: 'M', md: 'B', b: 'B', g: 'B', t: 'T' }[suf[1]];
+      // Sans lettre, le chiffre tapé est pris dans l'unité affichée sur le bouton.
+      else if (!/^\d{1,3}([\s\u00a0\u202f.]\d{3})+$/.test(String(el.value).trim())) v = v * UNIT_MULT[stratUnit(st, k)];
+      st[k] = Math.round(v);
     }
     save();
     setTimeout(function () {
@@ -1767,6 +1799,7 @@
     accDelCancel: function () { ui.confirmAcc = null; render(); },
     accDel: function (el) { deleteAccount(el.dataset.v); },
     resAdd: addResource,
+    stratUnit: function (el) { cycleStratUnit(el.dataset.k); },
     stratAcc: function (el) { ui.stratAcc = el.dataset.v; render(); },
     stratCfg: function () { ui.stratCfg = !ui.stratCfg; render(); },
     stratActive: function (el) { var c = stratCfgOf(el.dataset.v); if (c) { c.active = !c.active; save(); render(); } },
@@ -1836,6 +1869,8 @@
     else if (fld === 'resDraft') { e.preventDefault(); addResource(); }
     else if (fld === 'res' || fld === 'cnt' || fld === 'reps' || fld === 'strat' || fld === 'stratCfg') { e.preventDefault(); e.target.blur(); }
   });
+  // Le bouton d'unité ne doit pas retirer le focus du champ : sinon le chiffre serait validé avec l'ancienne unité.
+  app.addEventListener('pointerdown', function (e) { if (e.target.closest && e.target.closest('.unit-btn')) e.preventDefault(); });
   // Appui ou glissé sur le graphique : affiche la valeur du jour touché ; relâcher remet la dernière valeur.
   var chartDrag = false;
   app.addEventListener('pointerdown', function (e) {
