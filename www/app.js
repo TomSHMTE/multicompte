@@ -17,6 +17,9 @@
     plus: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
     back: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>',
     trash: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M10 7V4h4v3"/><path d="M6 7l1 13h10l1-13"/></svg>',
+    grip: '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>',
+    up: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>',
+    down: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
     edit: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg>',
     tasks: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M4 6l1 1 2-2"/><path d="M4 12l1 1 2-2"/><path d="M4 18l1 1 2-2"/></svg>',
     gem: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4h12l3 5-9 11L3 9z"/><path d="M3 9h18"/><path d="M9 4l3 16 3-16"/></svg>',
@@ -227,6 +230,7 @@
       ui.counter = null;
       if (r !== 'reglages') { ui.confirmRes = null; }
       ui.chartPick = null;
+      if (r !== '' && r.indexOf('tache-') !== 0) ui.reorder = false;
     }
     var html;
     if (r === 'reglages') html = viewSettings();
@@ -299,6 +303,7 @@
       '<h1>Aujourd’hui</h1>' +
       '<span class="sub">' + (cur.total ? plural(cur.total - cur.done, 'case', 'cases') + ' à cocher · ' : '') + 'reset ' + resetClock() + '</span></div>' +
       '<div class="score"><b>' + cur.done + '<small>/' + cur.total + '</small></b><div class="bar"><i style="width:' + pct + '%"></i></div></div></div>';
+    if (ui.reorder && data.tasks.length) return viewReorder(groups, today);
     h += '<div class="scroll has-fab">';
     if (!data.accounts.length) {
       h += '<div class="empty">Aucun compte pour l’instant.<button class="btn primary sm" style="width:auto;padding:0 16px" data-act="go" data-to="reglages">Ajouter un compte</button></div>';
@@ -334,6 +339,40 @@
     h += nav('') + '</div>';
     return h;
   }
+  /* Mode « réorganiser » (ouvert par un appui long sur une tâche) : liste compacte par section,
+     on glisse la poignée pour changer l'ordre, ou on utilise les flèches. L'ordre est celui de data.tasks. */
+  function viewReorder(groups, today) {
+    var h = '<div class="screen"><div class="head"><div style="display:flex;flex-direction:column;gap:2px;min-width:0"><span class="kicker">Tâches</span>' +
+      '<h1>Réorganiser</h1><span class="sub">Glisse la poignée, ou utilise les flèches</span></div>' +
+      '<button class="btn primary sm" style="width:auto;padding:0 18px" data-act="reorderDone">Terminé</button></div><div class="scroll">';
+    groups.forEach(function (g) {
+      var list = data.tasks.filter(function (t) { return tabOf(t) === g[0]; });
+      if (!list.length) return;
+      h += '<div class="sec-head static">' + g[1] + '<span class="sec-count">' + plural(list.length, 'tâche', 'tâches') + '</span></div>' +
+        '<div class="ro-list" data-group="' + g[0] + '">';
+      list.forEach(function (t, i) {
+        var hot = ui.reorderHot === t.id;
+        var off = !periodOf(t, today);
+        h += '<div class="ro-row' + (hot ? ' hot' : '') + (off ? ' off' : '') + '" data-task="' + t.id + '">' +
+          '<span class="ro-grip" aria-hidden="true">' + ICON.grip + '</span>' +
+          '<span class="ro-name"><b>' + esc(t.name) + '</b>' + (off ? '<small>pas aujourd’hui</small>' : '') + '</span>' +
+          '<button class="icon-btn ghost" data-act="roMove" data-task="' + t.id + '" data-d="-1"' + (i === 0 ? ' disabled' : '') + ' aria-label="Monter ' + esc(t.name) + '">' + ICON.up + '</button>' +
+          '<button class="icon-btn ghost" data-act="roMove" data-task="' + t.id + '" data-d="1"' + (i === list.length - 1 ? ' disabled' : '') + ' aria-label="Descendre ' + esc(t.name) + '">' + ICON.down + '</button>' +
+          '<button class="icon-btn ghost" data-act="go" data-to="tache-' + t.id + '" aria-label="Modifier ' + esc(t.name) + '">' + ICON.edit + '</button></div>';
+      });
+      h += '</div>';
+    });
+    h += '</div>' + nav('') + '</div>';
+    return h;
+  }
+  // Range les tâches d'une section dans l'ordre donné, sans toucher aux places des autres sections.
+  function setGroupOrder(group, ids) {
+    var k = 0, byId = {};
+    data.tasks.forEach(function (t) { byId[t.id] = t; });
+    data.tasks = data.tasks.map(function (t) { return tabOf(t) === group ? byId[ids[k++]] : t; });
+    save();
+  }
+  function groupIds(group) { return data.tasks.filter(function (t) { return tabOf(t) === group; }).map(function (t) { return t.id; }); }
   function taskDone(t, today) {
     var per = periodOf(t, today), accs = taskAccounts(t);
     return accs.length > 0 && accs.every(function (a) { return getCount(per, t, a) >= reps(t); });
@@ -355,7 +394,7 @@
     }).join('');
     var all = accs.length > 0 && n === accs.length;
     var sub = [t.note, t.time ? 'à ' + t.time + (t.remindBefore >= 0 ? ' · rappel ' + (t.remindBefore ? t.remindBefore + ' min avant' : 'à l’heure') : '') : '', freqLabel(t, today)].filter(Boolean).join(' · ');
-    return '<div class="card' + (all ? ' done' : '') + '"><div class="task-top">' +
+    return '<div class="card' + (all ? ' done' : '') + '" data-task="' + t.id + '"><div class="task-top">' +
       '<div class="task-name"><b>' + esc(t.name) + '</b>' + (sub ? '<span>' + esc(sub) + '</span>' : '') + '</div>' +
       (all ? '<span class="pill-done">TERMINÉ</span>' : '<span class="count">' + n + '<small>/' + accs.length + '</small></span>') +
       (accs.length ? '<button class="btn-small" data-act="all" data-task="' + t.id + '">' + (all ? 'Annuler' : 'Tout') + '</button>' : '') +
@@ -1778,6 +1817,18 @@
     chRes: function (el) { ui.chart.res = el.dataset.v; ui.chartPick = null; render(); },
     chScope: function (el) { ui.chart.scope = el.dataset.v; ui.chartPick = null; render(); },
     chDays: function (el) { ui.chart.days = +el.dataset.v; ui.chartPick = null; render(); },
+    reorderDone: function () { ui.reorder = false; ui.reorderHot = null; render(); },
+    roMove: function (el) {
+      var t = findTask(el.dataset.task);
+      if (!t) return;
+      var g = tabOf(t), ids = groupIds(g), i = ids.indexOf(t.id), j = i + (+el.dataset.d);
+      if (j < 0 || j >= ids.length) return;
+      ids.splice(i, 1); ids.splice(j, 0, t.id);
+      ui.reorderHot = t.id;
+      setGroupOrder(g, ids); render();
+      var b = app.querySelector('.ro-row[data-task="' + t.id + '"] [data-d="' + el.dataset.d + '"]');
+      if (b && !b.disabled) b.focus();
+    },
     sec: function (el) { ui.collapsed[el.dataset.v] = !ui.collapsed[el.dataset.v]; render(); },
     evDot: function (el) { evToggle(el.dataset.ev, el.dataset.key, el.dataset.time, el.dataset.acc); },
     evAll: function (el) { evAll(el.dataset.ev, el.dataset.key, el.dataset.time); },
@@ -1962,6 +2013,84 @@
   window.addEventListener('pointerup', function () { if (chartDrag) { chartDrag = false; setTimeout(function () { if (!chartDrag) { ui.chartPick = null; render(); } }, 1500); } });
   // Ne réagit qu'à un geste commencé sur le graphique : sinon le défilement de l'écran serait interrompu.
   window.addEventListener('pointercancel', function () { if (!chartDrag) return; chartDrag = false; ui.chartPick = null; render(); });
+  /* Appui long sur une tâche : ouvre le mode « réorganiser » (et ne coche rien). */
+  var lp = null, lpFired = false;
+  app.addEventListener('pointerdown', function (e) {
+    lpFired = false; // un nouvel appui : l'éventuel clic d'un appui long précédent n'arrivera plus
+    if (route() !== '' || ui.reorder || e.button > 0) return;
+    var card = e.target.closest && e.target.closest('.card[data-task]');
+    if (!card) return;
+    var id = card.dataset.task;
+    lp = { x: e.clientX, y: e.clientY, timer: setTimeout(function () {
+      lp = null; lpFired = true;
+      try { if (navigator.vibrate) navigator.vibrate(30); } catch (err) {}
+      ui.reorder = true; ui.reorderHot = id; ui.counter = null; render();
+      var row = app.querySelector('.ro-row[data-task="' + id + '"]');
+      if (row && row.scrollIntoView) row.scrollIntoView({ block: 'center' });
+    }, 500) };
+  });
+  function lpCancel() { if (lp) { clearTimeout(lp.timer); lp = null; } }
+  app.addEventListener('pointermove', function (e) { if (lp && Math.abs(e.clientX - lp.x) + Math.abs(e.clientY - lp.y) > 10) lpCancel(); });
+  window.addEventListener('pointerup', lpCancel);
+  window.addEventListener('pointercancel', lpCancel);
+  app.addEventListener('scroll', lpCancel, true);
+  // Le clic qui suit un appui long ne doit pas cocher la case touchée.
+  app.addEventListener('click', function (e) { if (lpFired) { lpFired = false; e.stopPropagation(); e.preventDefault(); } }, true);
+  app.addEventListener('contextmenu', function (e) { if (e.target.closest && e.target.closest('.card[data-task], .ro-row')) e.preventDefault(); });
+
+  /* Glisser une tâche par sa poignée en mode « réorganiser ». */
+  var drag = null;
+  app.addEventListener('pointerdown', function (e) {
+    var grip = e.target.closest && e.target.closest('.ro-grip');
+    if (!grip) return;
+    var row = grip.closest('.ro-row'), list = row.parentNode;
+    var rows = Array.prototype.slice.call(list.children);
+    e.preventDefault();
+    try { grip.setPointerCapture(e.pointerId); } catch (err) {}
+    var tops = rows.map(function (r) { var b = r.getBoundingClientRect(); return b.top + b.height / 2; });
+    drag = { id: row.dataset.task, group: list.dataset.group, row: row, rows: rows, from: rows.indexOf(row), to: rows.indexOf(row),
+      startY: e.clientY, mids: tops, h: row.getBoundingClientRect().height + 8, scroller: app.querySelector('.scroll'), scroll0: 0, y: e.clientY };
+    drag.scroll0 = drag.scroller.scrollTop;
+    row.classList.add('dragging');
+    autoScroll();
+  });
+  function dragPaint() {
+    if (!drag) return;
+    var dy = drag.y - drag.startY + (drag.scroller.scrollTop - drag.scroll0);
+    var center = drag.mids[drag.from] + dy, to = 0;
+    for (var i = 0; i < drag.mids.length; i++) { if (i !== drag.from && center > drag.mids[i]) to++; }
+    drag.to = to;
+    drag.row.style.transform = 'translateY(' + dy + 'px)';
+    drag.rows.forEach(function (r, i) {
+      if (i === drag.from) return;
+      var shift = 0;
+      if (drag.from < to && i > drag.from && i <= to) shift = -drag.h;
+      if (drag.from > to && i < drag.from && i >= to) shift = drag.h;
+      r.style.transform = shift ? 'translateY(' + shift + 'px)' : '';
+    });
+  }
+  function autoScroll() {
+    if (!drag) return;
+    var b = drag.scroller.getBoundingClientRect(), edge = 64, v = 0;
+    if (drag.y < b.top + edge) v = -Math.ceil((b.top + edge - drag.y) / 6);
+    else if (drag.y > b.bottom - edge) v = Math.ceil((drag.y - (b.bottom - edge)) / 6);
+    if (v) { drag.scroller.scrollTop += v; dragPaint(); }
+    requestAnimationFrame(autoScroll);
+  }
+  app.addEventListener('pointermove', function (e) { if (!drag) return; e.preventDefault(); drag.y = e.clientY; dragPaint(); });
+  function dragEnd(cancel) {
+    if (!drag) return;
+    var d = drag; drag = null;
+    if (!cancel && d.to !== d.from) {
+      var ids = groupIds(d.group), i = ids.indexOf(d.id);
+      ids.splice(i, 1); ids.splice(d.to, 0, d.id);
+      setGroupOrder(d.group, ids);
+    }
+    ui.reorderHot = d.id;
+    render();
+  }
+  window.addEventListener('pointerup', function () { dragEnd(false); });
+  window.addEventListener('pointercancel', function () { dragEnd(true); });
   window.addEventListener('hashchange', render);
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) return;
@@ -1971,7 +2100,7 @@
       LN.checkExactNotificationSetting().then(function (r) { var ch = ui.exact !== r.exact_alarm; ui.exact = r.exact_alarm; if (ch) queueReminders(); render(); }, function () { render(); });
     } else render();
   });
-  setInterval(function () { if (checkDay()) render(); }, 30000);
+  setInterval(function () { if (!drag && checkDay()) render(); }, 30000);
 
   render();
   queueReminders();
